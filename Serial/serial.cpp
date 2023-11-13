@@ -7,19 +7,27 @@
 using namespace std;
 
 void conv(uint8_t *input, float *kernel, uint8_t *output, int width, int height, int kernel_size){
-    // takes an gray image array (already padded by 1) and a kernel, return the convoluted image array
     float temp_pixel = 0;
-    for(int i = 1 ; i < height - 1; i++){
-        for(int j = 1; j < width - 1; j++){
+    printf("convolution start!\n");
+    // TODO: boundary check due to padding, modify to the version without padding
+    int indexi, indexj;
+    for(int i = 0 ; i < height ; i++){
+        for(int j = 0; j < width ; j++){
             temp_pixel = 0;
             for(int k = 0 ; k < kernel_size ; k++){
                 for(int l = 0 ; l < kernel_size ; l++){
-                    temp_pixel += float(input[(i + k - 1) * width + j + l - 1] * kernel[k * kernel_size + l]);
+                    indexi = i - 1 + k;
+                    indexj = j - 1 + l;
+                    if(indexi < 0 || indexi >= height || indexj < 0 || indexj >= width)
+                        temp_pixel += 0.0;
+                    else
+                        temp_pixel += float(input[(indexi) * width + (indexj)] * kernel[k * kernel_size + l]);
                 }
             }
             output[i * width + j] = uint8_t(temp_pixel);
         }
     }
+    printf("convolution done!\n");
 }
 
 int main(){
@@ -39,53 +47,40 @@ int main(){
     fread(p, sizeof(pixel24), header.width * header.height, fp);
     fclose(fp);
 
-    // padding
-    pixel24 *p1_padding = (pixel24 *)malloc(sizeof(pixel24) * (header.width + 2) * (header.height + 2));
-    for(int i = 1; i< header.height + 1; i++){
-        for(int j = 1; j < header.width + 1; j++){
-            p1_padding[i * (header.width + 2) + j] = p[(i - 1) * header.width + j - 1];
-        }
-    }
-
     // to one dimention gray
-    uint8_t *p1_gray = (uint8_t *)malloc(sizeof(uint8_t) * (header.width + 2) * (header.height + 2));
-    for(int i = 0 ; i < (header.width + 2) * (header.height + 2) ; i ++){
+    uint8_t *p1_gray = (uint8_t *)malloc(sizeof(uint8_t) * (header.width) * (header.height));
+    for(int i = 0 ; i < (header.width) * (header.height) ; i ++){
         p1_gray[i] = 0;
     }
-    for(int i = 1 ; i < header.height + 1; i++){
-        for(int j = 1; j < header.width + 1; j++){
-            int gray = (p1_padding[i * (header.width + 2) + j].r + p1_padding[i * (header.width + 2) + j].g + p1_padding[i * (header.width + 2) + j].b) / 3;
-            p1_gray[i * (header.width + 2) + j] = gray;
+    for(int i = 0 ; i < header.height; i++){
+        for(int j = 0; j < header.width; j++){
+            int gray = (p[i * (header.width) + j].r + p[i * (header.width) + j].g + p[i * (header.width) + j].b) / 3;
+            p1_gray[i * (header.width ) + j] = gray;
         }
     }
-
+    
     // convolution
-    uint8_t *p1_gray_after_gaussian = (uint8_t *)malloc(sizeof(uint8_t) * (header.width + 2) * (header.height + 2));
-    for(int i = 0 ; i < (header.width + 2) * (header.height + 2) ; i ++){
+    uint8_t *p1_gray_after_gaussian = (uint8_t *)malloc(sizeof(uint8_t) * (header.width) * (header.height));
+    
+    for(int i = 0 ; i < (header.width) * (header.height) ; i ++){
         p1_gray_after_gaussian[i] = 0;
     }
+    
     float gaussian_kernel[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
-    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, header.width + 2, header.height + 2, 3);
+    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, header.width , header.height , 3);
 
 
     uint8_t *final_result = p1_gray_after_gaussian;
 
     // back to three dimention gray
-    for(int i = 1 ; i < header.height + 1; i++){
-        for(int j = 1; j < header.width + 1; j++){
-            p1_padding[i * (header.width + 2) + j].r = final_result[i * (header.width + 2) + j];
-            p1_padding[i * (header.width + 2) + j].g = final_result[i * (header.width + 2) + j];
-            p1_padding[i * (header.width + 2) + j].b = final_result[i * (header.width + 2) + j];
+    pixel24 *p1 = (pixel24 *)malloc(sizeof(pixel24) * header.width * header.height);
+    for(int i = 0 ; i < header.height; i++){
+        for(int j = 0; j < header.width; j++){
+            p1[i * header.width + j].r = final_result[i * (header.width ) + j];
+            p1[i * header.width + j].g = final_result[i * (header.width ) + j];
+            p1[i * header.width + j].b = final_result[i * (header.width ) + j];
         }
     }
-
-    // reverse padding
-    pixel24 *p1 = (pixel24 *)malloc(sizeof(pixel24) * header.width * header.height);
-    for(int i = 1; i< header.height + 1; i++){
-        for(int j = 1; j < header.width + 1; j++){
-            p1[(i - 1) * header.width + j - 1] = p1_padding[i * (header.width + 2) + j];
-        }
-    }   
 
 
     // write to a new file
