@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "bmp.h"
+#include <cmath>
 // read an rgb bmp image and transfer it to gray image
 
 using namespace std;
@@ -77,18 +78,47 @@ int main(){
     }
     
     // convolution
-    uint8_t *p1_gray_after_gaussian = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    uint8_t *fs = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     
     for(int i = 0 ; i < (width) * (height) ; i ++){
-        p1_gray_after_gaussian[i] = 0;
+        fs[i] = 0;
     }
     
-    float gaussian_kernel[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
-    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, 0, width/2, 0, height/2, 3);
-    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, width/2, width, 0, height/2, 3);
-    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, width/2, width, width/2, height, 3);
-    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, 0, width/2, width/2, height, 3);
-    uint8_t *final_result = p1_gray_after_gaussian;
+    // step 1: Smoothing
+    float G[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
+    conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    // conv(p1_gray, G, fs, 0, width/2, 0, height/2, 3);
+    // conv(p1_gray, G, fs, width/2, width, 0, height/2, 3);
+    // conv(p1_gray, G, fs, width/2, width, width/2, height, 3);
+    // conv(p1_gray, G, fs, 0, width/2, width/2, height, 3);
+    
+    // step 2: Gradient Computation
+    float Sx[9] = {
+        -1,  0,  1, 
+        -2,  0,  2, 
+        -1,  0,  1};
+    float Sy[9] = {
+        -1, -2, -1, 
+         0,  0,  0, 
+         1,  2,  1};
+    uint8_t *gx = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    conv(fs, Sx, gx, 0, width, 0, height, 3);
+    uint8_t *gy = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    conv(fs, Sy, gy, 0, width, 0, height, 3);
+    double *M = (double *)malloc(sizeof(double) * (width) * (height));
+    for(int i = 0 ; i < height ; i += 1){
+        for(int j = 0 ; j < width ; j += 1){
+            M[i * width + j] = sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]);
+        }
+    }
+    double *theta = (double *)malloc(sizeof(double) * (width) * (height));
+    for(int i = 0 ; i < height ; i += 1){
+        for(int j = 0 ; j < width ; j += 1){
+            theta[i * width + j] = atan2(gy[i * width + j], gx[i * width + j]);
+        }
+    }
+
+    uint8_t *final_result = fs;
 
     // back to three dimention gray
     pixel24 *p1 = (pixel24 *)malloc(sizeof(pixel24) * width * height);
