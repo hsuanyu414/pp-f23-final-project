@@ -6,8 +6,24 @@
 
 using namespace std;
 
+void conv(uint8_t *input, float *kernel, uint8_t *output, int width, int height, int kernel_size){
+    // takes an gray image array (already padded by 1) and a kernel, return the convoluted image array
+    float temp_pixel = 0;
+    for(int i = 1 ; i < height - 1; i++){
+        for(int j = 1; j < width - 1; j++){
+            temp_pixel = 0;
+            for(int k = 0 ; k < kernel_size ; k++){
+                for(int l = 0 ; l < kernel_size ; l++){
+                    temp_pixel += float(input[(i + k - 1) * width + j + l - 1] * kernel[k * kernel_size + l]);
+                }
+            }
+            output[i * width + j] = uint8_t(temp_pixel);
+        }
+    }
+}
+
 int main(){
-    FILE *fp = fopen("test24.bmp", "rb");
+    FILE *fp = fopen("test_gray.bmp", "rb");
     if(fp == NULL){
         printf("Error: cannot open the file!\n");
         exit(1);
@@ -15,10 +31,10 @@ int main(){
     // read the header
     sBmpHeader header = {0};
     fread(&header, sizeof(sBmpHeader), 1, fp);
-    print_bmp_header(&header);
+    // print_bmp_header(&header);
 
     fseek(fp, header.offset, SEEK_SET);
-    // read each pixel (for 32-bit bmp)
+    // read each pixel (for 24-bit bmp)
     pixel24 *p = (pixel24 *)malloc(sizeof(pixel24) * header.width * header.height);
     fread(p, sizeof(pixel24), header.width * header.height, fp);
     fclose(fp);
@@ -31,8 +47,37 @@ int main(){
         }
     }
 
-    // gray
-    
+    // to one dimention gray
+    uint8_t *p1_gray = (uint8_t *)malloc(sizeof(uint8_t) * (header.width + 2) * (header.height + 2));
+    for(int i = 0 ; i < (header.width + 2) * (header.height + 2) ; i ++){
+        p1_gray[i] = 0;
+    }
+    for(int i = 1 ; i < header.height + 1; i++){
+        for(int j = 1; j < header.width + 1; j++){
+            int gray = (p1_padding[i * (header.width + 2) + j].r + p1_padding[i * (header.width + 2) + j].g + p1_padding[i * (header.width + 2) + j].b) / 3;
+            p1_gray[i * (header.width + 2) + j] = gray;
+        }
+    }
+
+    // convolution
+    uint8_t *p1_gray_after_gaussian = (uint8_t *)malloc(sizeof(uint8_t) * (header.width + 2) * (header.height + 2));
+    for(int i = 0 ; i < (header.width + 2) * (header.height + 2) ; i ++){
+        p1_gray_after_gaussian[i] = 0;
+    }
+    float gaussian_kernel[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
+    conv(p1_gray, gaussian_kernel, p1_gray_after_gaussian, header.width + 2, header.height + 2, 3);
+
+
+    uint8_t *final_result = p1_gray_after_gaussian;
+
+    // back to three dimention gray
+    for(int i = 1 ; i < header.height + 1; i++){
+        for(int j = 1; j < header.width + 1; j++){
+            p1_padding[i * (header.width + 2) + j].r = final_result[i * (header.width + 2) + j];
+            p1_padding[i * (header.width + 2) + j].g = final_result[i * (header.width + 2) + j];
+            p1_padding[i * (header.width + 2) + j].b = final_result[i * (header.width + 2) + j];
+        }
+    }
 
     // reverse padding
     pixel24 *p1 = (pixel24 *)malloc(sizeof(pixel24) * header.width * header.height);
@@ -44,7 +89,7 @@ int main(){
 
 
     // write to a new file
-    FILE *fp2 = fopen("test_gray.bmp", "wb");
+    FILE *fp2 = fopen("test_gray_output.bmp", "wb");
     if(fp2 == NULL){
         printf("Error: cannot open the file!\n");
         exit(1);
@@ -57,3 +102,4 @@ int main(){
 
 
 }
+
