@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "bmp.h"
 #include <cmath>
+#include <algorithm>
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
@@ -228,6 +229,29 @@ int main(){
     // step 3: Non-maximum Suppression
     int32_t *fN = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     non_maximum_sup(M, fN, theta, 0, width, 0, height);
+
+    // step 4: Double Thresholding
+    // get the max and min of fN
+    int32_t max_fN_index = std::max_element(fN, fN + width * height) - fN;
+    int32_t Th = fN[max_fN_index] * 0.1;
+    int32_t Tl = Th * 0.05;
+    printf("Th: %d, Tl: %d\n", Th, Tl);
+
+    // step 5: Edge Tracking by Hysteresis
+    for(int i = 0 ; i < height ; i += 1){
+        for(int j = 0 ; j < width ; j += 1){
+            if(fN[i * width + j] >= Th)
+                fN[i * width + j] = 255;
+            else if(fN[i * width + j] <= Tl)
+                fN[i * width + j] = 0;
+            else{
+                if(fN[(i - 1) * width + j] >= Th || fN[(i + 1) * width + j] >= Th || fN[i * width + j - 1] >= Th || fN[i * width + j + 1] >= Th)
+                    fN[i * width + j] = 255;
+                else
+                    fN[i * width + j] = 0;
+            }
+        }
+    }
 
     uint8_t *fN_u8 = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     int32_t max=0, min=1000000;
