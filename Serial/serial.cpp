@@ -48,9 +48,47 @@ void conv(
     printf("convolution done!\n");
 }
 
-void non_maximum_sup(uint8_t *input, uint8_t* output, double* theta, int start_width, int end_width, int start_height, int end_height){
+void conv2(
+    uint8_t *input, 
+    float *kernel, 
+    int32_t *output, 
+    int start_width, int end_width, 
+    int start_height, int end_height, 
+    int kernel_size){
+
+    float temp_pixel = 0;
+    printf("convolution start!\n");
+    // TODO: boundary check due to padding, modify to the version without padding
+    int indexi, indexj;
+    for(int i = start_height ; i < end_height ; i++){
+        for(int j = start_width; j < end_width ; j++){
+            temp_pixel = 0;
+            for(int k = 0 ; k < kernel_size ; k++){
+                for(int l = 0 ; l < kernel_size ; l++){
+                    indexi = i - 1 + k;
+                    indexj = j - 1 + l;
+                    if(indexi < 0 || indexi >= height || indexj < 0 || indexj >= width)
+                        temp_pixel += 0.0;
+                    else
+                    {
+                        temp_pixel += float((input[(indexi) * width + (indexj)]) * kernel[k * kernel_size + l]);
+                    }
+                }
+            }
+            // return the result back to output
+            output[i * width + j] = int32_t(temp_pixel);
+        }
+    }       
+    printf("convolution done!\n");
+}
+
+void non_maximum_sup(
+        int32_t *input, int32_t* output, 
+        double* theta, 
+        int start_width, int end_width, 
+        int start_height, int end_height){
     int32_t indexMa, indexMb;
-    uint8_t Ma, Mb;
+    int32_t Ma, Mb;
     double theta_temp;
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
@@ -83,7 +121,6 @@ void non_maximum_sup(uint8_t *input, uint8_t* output, double* theta, int start_w
                 output[i * width + j] = input[i * width + j];
             else
                 output[i * width + j] = 0;
-            printf("i: %d, j: %d, theta: %f, Ma: %d, Mb: %d, input: %d, output: %d\n", i, j, theta_temp, Ma, Mb, input[i * width + j], output[i * width + j]);
         }
     }
     printf("non-maximum suppression done!\n");
@@ -147,27 +184,32 @@ int main(){
          1.0,  2.0,  1.0};
 
     // TODO: gx gy fN modify to int32_t
-    uint8_t *gx = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
-    conv(fs, Sx, gx, 0, width, 0, height, 3);
-    uint8_t *gy = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
-    conv(fs, Sy, gy, 0, width, 0, height, 3);
-    uint8_t *M = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    int32_t *gx = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    conv2(fs, Sx, gx, 0, width, 0, height, 3);
+    int32_t *gy = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    conv2(fs, Sy, gy, 0, width, 0, height, 3);
+    free(fs);
+    int32_t *M = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     double temp_double = 0.0;
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
             temp_double = sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]);
-            M[i * width + j] = uint8_t(temp_double);
+            M[i * width + j] = int32_t(temp_double);
         }
     }
     double theta_temp = 0.0;
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
+    double theta_min = PI ;
+    double theta_max = -PI ;
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
             theta_temp = atan2(gy[i * width + j], gx[i * width + j]);
             theta_temp = theta_temp * 180 / PI;
-            theta_temp -= 90;
             if(theta_temp < 0)
                 theta_temp += 180;
+            theta_temp = 180 - theta_temp;
+            // realign the theta offset due to direction of sobel
+
             if(theta_temp >= 0 && theta_temp < 22.5)
                 theta_temp = 0;
             else if(theta_temp >= 22.5 && theta_temp < 67.5)
@@ -181,12 +223,30 @@ int main(){
             theta[i * width + j] = theta_temp;
         }
     }
+    printf("theta_max: %f, theta_min: %f\n", theta_max, theta_min);
 
     // step 3: Non-maximum Suppression
-    uint8_t *fN = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
-    // non_maximum_sup(M, fN, theta, 0, width, 0, height);
+    int32_t *fN = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    non_maximum_sup(M, fN, theta, 0, width, 0, height);
 
-    uint8_t *final_result = fs;
+    uint8_t *fN_u8 = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    int32_t max=0, min=1000000;
+    for(int i = 0 ; i < height ; i += 1){
+        for(int j = 0 ; j < width ; j += 1){
+            max = max > fN[i * width + j] ? max : fN[i * width + j];
+            min = min < fN[i * width + j] ? min : fN[i * width + j];
+        }
+    }
+    printf("max: %d, min: %d\n", max, min);
+    printf("====================================\n");
+
+    for(int i = 0 ; i < height ; i += 1){
+        for(int j = 0 ; j < width ; j += 1){
+            fN_u8[i * width + j] = uint8_t((fN[i * width + j] - min) * 255 / (max - min));
+        }
+    }
+
+    uint8_t *final_result = fN_u8;
 
     // back to three dimention gray
     pixel24 *p1 = (pixel24 *)malloc(sizeof(pixel24) * width * height);
@@ -209,6 +269,7 @@ int main(){
     fwrite(p1, sizeof(pixel24), width * height, fp2);
     fclose(fp2);
     free(p);
+    printf("done!\n");
     return 0;
 
 
