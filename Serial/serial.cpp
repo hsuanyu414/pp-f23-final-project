@@ -5,6 +5,8 @@
 #include <cmath>
 // read an rgb bmp image and transfer it to gray image
 
+#define PI 3.14159265
+
 using namespace std;
 
 int width, height;
@@ -46,8 +48,50 @@ void conv(
     printf("convolution done!\n");
 }
 
+void non_maximum_sup(uint8_t *input, uint8_t* output, double* theta, int start_width, int end_width, int start_height, int end_height){
+    int32_t indexMa, indexMb;
+    uint8_t Ma, Mb;
+    double theta_temp;
+    for(int i = start_height ; i < end_height ; i++){
+        for(int j = start_width; j < end_width ; j++){
+            theta_temp = theta[i * width + j];
+            if(theta_temp == 0){
+                indexMa = i * width + j - 1;
+                indexMb = i * width + j + 1;
+            }
+            else if(theta_temp == 45){
+                indexMa = (i - 1) * width + j + 1;
+                indexMb = (i + 1) * width + j - 1;
+            }
+            else if(theta_temp == 90){
+                indexMa = (i - 1) * width + j;
+                indexMb = (i + 1) * width + j;
+            }
+            else if(theta_temp == 135){
+                indexMa = (i - 1) * width + j - 1;
+                indexMb = (i + 1) * width + j + 1;
+            }
+            if(indexMa < 0 || indexMa >= height * width)
+                Ma = 0;
+            else
+                Ma = input[indexMa];
+            if(indexMb < 0 || indexMb >= height * width)
+                Mb = 0;
+            else
+                Mb = input[indexMb];
+            if(input[i * width + j] >= Ma && input[i * width + j] >= Mb)
+                output[i * width + j] = input[i * width + j];
+            else
+                output[i * width + j] = 0;
+            printf("i: %d, j: %d, theta: %f, Ma: %d, Mb: %d, input: %d, output: %d\n", i, j, theta_temp, Ma, Mb, input[i * width + j], output[i * width + j]);
+        }
+    }
+    printf("non-maximum suppression done!\n");
+}
+
 int main(){
-    FILE *fp = fopen("test_gray.bmp", "rb");
+    char filename[100] = "izuna24.bmp";
+    FILE *fp = fopen(filename, "rb");
     if(fp == NULL){
         printf("Error: cannot open the file!\n");
         exit(1);
@@ -94,29 +138,53 @@ int main(){
     
     // step 2: Gradient Computation
     float Sx[9] = {
-        -1,  0,  1, 
-        -2,  0,  2, 
-        -1,  0,  1};
+        -1.0,  0.0,  1.0, 
+        -2.0,  0.0,  2.0, 
+        -1.0,  0.0,  1.0};
     float Sy[9] = {
-        -1, -2, -1, 
-         0,  0,  0, 
-         1,  2,  1};
+        -1.0, -2.0, -1.0, 
+         0.0,  0.0,  0.0, 
+         1.0,  2.0,  1.0};
+
+    // TODO: gx gy fN modify to int32_t
     uint8_t *gx = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     conv(fs, Sx, gx, 0, width, 0, height, 3);
     uint8_t *gy = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     conv(fs, Sy, gy, 0, width, 0, height, 3);
-    double *M = (double *)malloc(sizeof(double) * (width) * (height));
+    uint8_t *M = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    double temp_double = 0.0;
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            M[i * width + j] = sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]);
+            temp_double = sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]);
+            M[i * width + j] = uint8_t(temp_double);
         }
     }
+    double theta_temp = 0.0;
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            theta[i * width + j] = atan2(gy[i * width + j], gx[i * width + j]);
+            theta_temp = atan2(gy[i * width + j], gx[i * width + j]);
+            theta_temp = theta_temp * 180 / PI;
+            theta_temp -= 90;
+            if(theta_temp < 0)
+                theta_temp += 180;
+            if(theta_temp >= 0 && theta_temp < 22.5)
+                theta_temp = 0;
+            else if(theta_temp >= 22.5 && theta_temp < 67.5)
+                theta_temp = 45;
+            else if(theta_temp >= 67.5 && theta_temp < 112.5)
+                theta_temp = 90;
+            else if(theta_temp >= 112.5 && theta_temp < 157.5)
+                theta_temp = 135;
+            else if(theta_temp >= 157.5 && theta_temp < 180)
+                theta_temp = 0;
+            theta[i * width + j] = theta_temp;
         }
     }
+
+    // step 3: Non-maximum Suppression
+    uint8_t *fN = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
+    // non_maximum_sup(M, fN, theta, 0, width, 0, height);
 
     uint8_t *final_result = fs;
 
