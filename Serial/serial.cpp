@@ -4,6 +4,7 @@
 #include "bmp.h"
 #include <cmath>
 #include <algorithm>
+#include <queue>
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
@@ -127,6 +128,59 @@ void non_maximum_sup(
     printf("non-maximum suppression done!\n");
 }
 
+int32_t Th, Tl;
+queue<int32_t> q;
+
+void edge_linking(
+        int32_t *input, 
+        int32_t* visited, 
+        int start_width, int end_width, 
+        int start_height, int end_height){
+    int32_t index;
+    int32_t temp;
+    while(!q.empty()){
+        index = q.front();
+        q.pop();
+        if(visited[index] == 0){
+            visited[index] = 1;
+            if(input[index] >= Tl){
+            // since the origin q only push the pixel with value >= Th, 
+            // any pixel in queue must be visited after an strong edge pixel
+            // so can be seen as a weak edge pixel connected to an strong edge pixel
+                input[index] = 255;
+                // up
+                if(index - width >= 0)
+                    q.push(index - width);
+                // down
+                if(index + width < width * height)
+                    q.push(index + width);
+                // left
+                if(index % width != 0)
+                    q.push(index - 1);
+                // right
+                if(index % width != width - 1)
+                    q.push(index + 1);
+                // up left
+                if(index - width - 1 >= 0)
+                    q.push(index - width - 1);
+                // up right
+                if(index - width + 1 >= 0)
+                    q.push(index - width + 1);
+                // down left
+                if(index + width - 1 < width * height)
+                    q.push(index + width - 1);
+                // down right
+                if(index + width + 1 < width * height)
+                    q.push(index + width + 1);
+            }
+            else
+                input[index] = 0;
+        }
+
+    }
+    printf("edge linking done!\n");
+}
+
 int main(){
     char filename[100] = "izuna24.bmp";
     FILE *fp = fopen(filename, "rb");
@@ -233,23 +287,38 @@ int main(){
     // step 4: Double Thresholding
     // get the max and min of fN
     int32_t max_fN_index = std::max_element(fN, fN + width * height) - fN;
-    int32_t Th = fN[max_fN_index] * 0.1;
-    int32_t Tl = Th * 0.05;
-    printf("Th: %d, Tl: %d\n", Th, Tl);
+    Th = fN[max_fN_index] * 0.1;
+    Tl = Th * 0.1;
 
     // step 5: Edge Tracking by Hysteresis
+    // for(int i = 0 ; i < height ; i += 1){
+    //     for(int j = 0 ; j < width ; j += 1){
+    //         if(fN[i * width + j] >= Th)
+    //             fN[i * width + j] = 255;
+    //         else if(fN[i * width + j] <= Tl)
+    //             fN[i * width + j] = 0;
+    //         else{
+    //             if(fN[(i - 1) * width + j] >= Th || fN[(i + 1) * width + j] >= Th || fN[i * width + j - 1] >= Th || fN[i * width + j + 1] >= Th)
+    //                 fN[i * width + j] = 255;
+    //             else
+    //                 fN[i * width + j] = 0;
+    //         }
+    //     }
+    // }
+    // edge tracking by bfs
+    int32_t *visited = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            if(fN[i * width + j] >= Th)
-                fN[i * width + j] = 255;
-            else if(fN[i * width + j] <= Tl)
+            visited[i * width + j] = 0;
+            if (fN[i * width + j] >= Th)
+                q.push(i * width + j);
+        }
+    }
+    edge_linking(fN, visited, 0, width, 0, height);
+    for(int i = 0 ; i < height ; i += 1){
+        for(int j = 0 ; j < width ; j += 1){
+            if(visited[i * width + j] == 0)
                 fN[i * width + j] = 0;
-            else{
-                if(fN[(i - 1) * width + j] >= Th || fN[(i + 1) * width + j] >= Th || fN[i * width + j - 1] >= Th || fN[i * width + j + 1] >= Th)
-                    fN[i * width + j] = 255;
-                else
-                    fN[i * width + j] = 0;
-            }
         }
     }
 
@@ -261,8 +330,8 @@ int main(){
             min = min < fN[i * width + j] ? min : fN[i * width + j];
         }
     }
-    printf("max: %d, min: %d\n", max, min);
-    printf("====================================\n");
+    // printf("max: %d, min: %d\n", max, min);
+    // printf("====================================\n");
 
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
@@ -284,7 +353,7 @@ int main(){
 
 
     // write to a new file
-    FILE *fp2 = fopen("test_gray_output.bmp", "wb");
+    FILE *fp2 = fopen("output_with_bfs.bmp", "wb");
     if(fp2 == NULL){
         printf("Error: cannot open the file!\n");
         exit(1);
