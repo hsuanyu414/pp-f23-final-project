@@ -84,6 +84,23 @@ void conv2(
     printf("convolution done!\n");
 }
 
+void grad_cal(
+        int32_t *gx, int32_t *gy, 
+        int32_t *output, 
+        int start_width, int end_width, 
+        int start_height, int end_height){
+    int32_t temp_pixel = 0;
+    printf("gradient calculation start!\n");
+    for(int i = start_height ; i < end_height ; i++){
+        for(int j = start_width; j < end_width ; j++){
+            temp_pixel = int32_t(sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]));
+            output[i * width + j] = temp_pixel;
+        }
+    }
+    printf("gradient calculation done!\n");
+}
+
+
 void non_maximum_sup(
         int32_t *input, int32_t* output, 
         double* theta, 
@@ -183,6 +200,7 @@ void edge_linking(
 
 int main(){
     char filename[100] = "izuna24.bmp";
+
     FILE *fp = fopen(filename, "rb");
     if(fp == NULL){
         printf("Error: cannot open the file!\n");
@@ -245,13 +263,11 @@ int main(){
     conv2(fs, Sy, gy, 0, width, 0, height, 3);
     free(fs);
     int32_t *M = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
-    double temp_double = 0.0;
-    for(int i = 0 ; i < height ; i += 1){
-        for(int j = 0 ; j < width ; j += 1){
-            temp_double = sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]);
-            M[i * width + j] = int32_t(temp_double);
-        }
-    }
+    grad_cal(gx, gy, M, 0, width, 0, height);
+    // grad_cal(gx, gy, M, 0, width, 0, height/2);
+    // grad_cal(gx, gy, M, 0, width, height/2, height);
+
+
     double theta_temp = 0.0;
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
     double theta_min = PI ;
