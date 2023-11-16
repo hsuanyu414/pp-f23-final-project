@@ -100,6 +100,38 @@ void grad_cal(
     printf("gradient calculation done!\n");
 }
 
+void theta_cal(
+        int32_t *gx, int32_t *gy, 
+        double *output, 
+        int start_width, int end_width, 
+        int start_height, int end_height){
+    double temp_pixel = 0;
+    printf("theta calculation start!\n");
+    for(int i = start_height ; i < end_height ; i++){
+        for(int j = start_width; j < end_width ; j++){
+            temp_pixel = atan2(gy[i * width + j], gx[i * width + j]);
+            temp_pixel = temp_pixel * 180 / PI;
+            if(temp_pixel < 0)
+                temp_pixel += 180;
+            temp_pixel = 180 - temp_pixel;
+            // realign the theta offset due to direction of sobel
+
+            if(temp_pixel >= 0 && temp_pixel < 22.5)
+                temp_pixel = 0;
+            else if(temp_pixel >= 22.5 && temp_pixel < 67.5)
+                temp_pixel = 45;
+            else if(temp_pixel >= 67.5 && temp_pixel < 112.5)
+                temp_pixel = 90;
+            else if(temp_pixel >= 112.5 && temp_pixel < 157.5)
+                temp_pixel = 135;
+            else if(temp_pixel >= 157.5 && temp_pixel < 180)
+                temp_pixel = 0;
+            output[i * width + j] = temp_pixel;
+        }
+    }
+    printf("theta calculation done!\n");
+}
+
 
 void non_maximum_sup(
         int32_t *input, int32_t* output, 
@@ -270,31 +302,9 @@ int main(){
 
     double theta_temp = 0.0;
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
-    double theta_min = PI ;
-    double theta_max = -PI ;
-    for(int i = 0 ; i < height ; i += 1){
-        for(int j = 0 ; j < width ; j += 1){
-            theta_temp = atan2(gy[i * width + j], gx[i * width + j]);
-            theta_temp = theta_temp * 180 / PI;
-            if(theta_temp < 0)
-                theta_temp += 180;
-            theta_temp = 180 - theta_temp;
-            // realign the theta offset due to direction of sobel
+    theta_cal(gx, gy, theta, 0, width, 0, height);
 
-            if(theta_temp >= 0 && theta_temp < 22.5)
-                theta_temp = 0;
-            else if(theta_temp >= 22.5 && theta_temp < 67.5)
-                theta_temp = 45;
-            else if(theta_temp >= 67.5 && theta_temp < 112.5)
-                theta_temp = 90;
-            else if(theta_temp >= 112.5 && theta_temp < 157.5)
-                theta_temp = 135;
-            else if(theta_temp >= 157.5 && theta_temp < 180)
-                theta_temp = 0;
-            theta[i * width + j] = theta_temp;
-        }
-    }
-    printf("theta_max: %f, theta_min: %f\n", theta_max, theta_min);
+
 
     // step 3: Non-maximum Suppression
     int32_t *fN = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
