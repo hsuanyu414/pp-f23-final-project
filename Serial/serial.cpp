@@ -89,12 +89,13 @@ void grad_cal(
         int32_t *output, 
         int start_width, int end_width, 
         int start_height, int end_height){
-    int32_t temp_pixel = 0;
+    int32_t temp_pixel = 0, temp_index = 0;
     printf("gradient calculation start!\n");
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
-            temp_pixel = int32_t(sqrt(gx[i * width + j] * gx[i * width + j] + gy[i * width + j] * gy[i * width + j]));
-            output[i * width + j] = temp_pixel;
+            temp_index = i * width + j;
+            temp_pixel = int32_t(sqrt(gx[temp_index] * gx[temp_index] + gy[temp_index] * gy[temp_index]));
+            output[temp_index] = temp_pixel;
         }
     }
     printf("gradient calculation done!\n");
@@ -256,10 +257,12 @@ int main(){
     for(int i = 0 ; i < (width) * (height) ; i ++){
         p1_gray[i] = 0;
     }
+    int temp_index, temp_int_pixel;
     for(int i = 0 ; i < height; i++){
         for(int j = 0; j < width; j++){
-            int gray = (p[i * (width) + j].r + p[i * (width) + j].g + p[i * (width) + j].b) / 3;
-            p1_gray[i * (width ) + j] = gray;
+            temp_index = i * (width) + j;
+            temp_int_pixel = (p[temp_index].r + p[temp_index].g + p[temp_index].b) / 3;
+            p1_gray[temp_index] = uint8_t(temp_int_pixel);
         }
     }
     
@@ -335,16 +338,18 @@ int main(){
     int32_t *visited = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            visited[i * width + j] = 0;
-            if (fN[i * width + j] >= Th)
-                q.push(i * width + j);
+            temp_index = i * width + j;
+            visited[temp_index] = 0;
+            if (fN[temp_index] >= Th)
+                q.push(temp_index);
         }
     }
     edge_linking(fN, visited, 0, width, 0, height);
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            if(visited[i * width + j] == 0)
-                fN[i * width + j] = 0;
+            temp_index = i * width + j;
+            if(visited[temp_index] == 0)
+                fN[temp_index] = 0;
         }
     }
 
@@ -352,8 +357,9 @@ int main(){
     int32_t max=0, min=1000000;
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            max = max > fN[i * width + j] ? max : fN[i * width + j];
-            min = min < fN[i * width + j] ? min : fN[i * width + j];
+            temp_index = i * width + j;
+            max = max > fN[temp_index] ? max : fN[temp_index];
+            min = min < fN[temp_index] ? min : fN[temp_index];
         }
     }
     // printf("max: %d, min: %d\n", max, min);
@@ -361,7 +367,8 @@ int main(){
 
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
-            fN_u8[i * width + j] = uint8_t((fN[i * width + j] - min) * 255 / (max - min));
+            temp_index = i * width + j;
+            fN_u8[temp_index] = uint8_t((fN[temp_index] - min) * 255 / (max - min));
         }
     }
 
@@ -371,9 +378,10 @@ int main(){
     pixel24 *p1 = (pixel24 *)malloc(sizeof(pixel24) * width * height);
     for(int i = 0 ; i < height; i++){
         for(int j = 0; j < width; j++){
-            p1[i * width + j].r = final_result[i * (width ) + j];
-            p1[i * width + j].g = final_result[i * (width ) + j];
-            p1[i * width + j].b = final_result[i * (width ) + j];
+            temp_index = i * (width) + j;
+            p1[temp_index].r = final_result[temp_index];
+            p1[temp_index].g = final_result[temp_index];
+            p1[temp_index].b = final_result[temp_index];
         }
     }
 
