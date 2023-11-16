@@ -183,6 +183,7 @@ queue<int32_t> q;
 
 void edge_linking(
         int32_t *input, 
+        int32_t* output,
         int32_t* visited, 
         int start_width, int end_width, 
         int start_height, int end_height){
@@ -197,7 +198,7 @@ void edge_linking(
             // since the origin q only push the pixel with value >= Th, 
             // any pixel in queue must be visited after an strong edge pixel
             // so can be seen as a weak edge pixel connected to an strong edge pixel
-                input[index] = 255;
+                output[index] = 255;
                 // up
                 if(index - width >= 0)
                     q.push(index - width);
@@ -224,7 +225,7 @@ void edge_linking(
                     q.push(index + width + 1);
             }
             else
-                input[index] = 0;
+                output[index] = 0;
         }
 
     }
@@ -336,30 +337,33 @@ int main(){
     // }
     // edge tracking by bfs
     int32_t *visited = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    int32_t *fN_linked = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    // init parameters before edge linking
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
             temp_index = i * width + j;
             visited[temp_index] = 0;
             if (fN[temp_index] >= Th)
                 q.push(temp_index);
+            fN_linked[temp_index] = 0;
         }
     }
-    edge_linking(fN, visited, 0, width, 0, height);
-    for(int i = 0 ; i < height ; i += 1){
-        for(int j = 0 ; j < width ; j += 1){
-            temp_index = i * width + j;
-            if(visited[temp_index] == 0)
-                fN[temp_index] = 0;
-        }
-    }
+    edge_linking(fN, fN_linked, visited, 0, width, 0, height);
+    // for(int i = 0 ; i < height ; i += 1){
+    //     for(int j = 0 ; j < width ; j += 1){
+    //         temp_index = i * width + j;
+    //         if(visited[temp_index] == 0)
+    //             fN[temp_index] = 0;
+    //     }
+    // }
 
     uint8_t *fN_u8 = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     int32_t max=0, min=1000000;
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
             temp_index = i * width + j;
-            max = max > fN[temp_index] ? max : fN[temp_index];
-            min = min < fN[temp_index] ? min : fN[temp_index];
+            max = max > fN_linked[temp_index] ? max : fN_linked[temp_index];
+            min = min < fN_linked[temp_index] ? min : fN_linked[temp_index];
         }
     }
     // printf("max: %d, min: %d\n", max, min);
@@ -368,7 +372,7 @@ int main(){
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
             temp_index = i * width + j;
-            fN_u8[temp_index] = uint8_t((fN[temp_index] - min) * 255 / (max - min));
+            fN_u8[temp_index] = uint8_t((fN_linked[temp_index] - min) * 255 / (max - min));
         }
     }
 
