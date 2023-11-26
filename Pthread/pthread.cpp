@@ -6,10 +6,11 @@
 #include <algorithm>
 #include <queue>
 #include <pthread.h>
+#include <fstream>
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
-#define THREAD_NUM 1
+#define THREAD_NUM 2
 pthread_mutex_t output_mutex;
 
 using namespace std;
@@ -25,16 +26,34 @@ struct edge_link_args{
     int thread_id;
 };
 
-void conv(
-    uint8_t *input, 
-    float *kernel, 
-    uint8_t *output, 
-    int start_width, int end_width, 
-    int start_height, int end_height, 
-    int kernel_size){
+struct conv_args{
+    uint8_t *input; 
+    float *kernel;
+    uint8_t *output; 
+    int start_width;
+    int end_width; 
+    int start_height; 
+    int end_height; 
+    int kernel_size;
+};
+
+void* conv(void* args){
+    struct conv_args *conv_arg = (struct conv_args*)args;
+    uint8_t *input  = conv_arg->input;
+    float *kernel   = conv_arg->kernel;
+    uint8_t *output = conv_arg->output;
+    int start_width = conv_arg->start_width;
+    int end_width   = conv_arg->end_width;
+    int start_height= conv_arg->start_height;
+    int end_height  = conv_arg->end_height;
+    int kernel_size = conv_arg->kernel_size;
 
     float temp_pixel = 0;
     printf("convolution start!\n");
+
+    ofstream myfile;
+    myfile.open ("conv.txt");
+
     // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
     for(int i = start_height ; i < end_height ; i++){
@@ -57,9 +76,12 @@ void conv(
                 temp_pixel = 255;
             // return the result back to output
             output[i * width + j] = uint8_t(temp_pixel);
+            myfile << temp_pixel;
         }
     }
     printf("convolution done!\n");
+    myfile.close();
+    pthread_exit(EXIT_SUCCESS);
 }
 
 void conv2(
@@ -71,7 +93,7 @@ void conv2(
     int kernel_size){
 
     float temp_pixel = 0;
-    printf("convolution start!\n");
+    printf("convolution2 start!\n");
     // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
     for(int i = start_height ; i < end_height ; i++){
@@ -93,7 +115,7 @@ void conv2(
             output[i * width + j] = int32_t(temp_pixel);
         }
     }       
-    printf("convolution done!\n");
+    printf("convolution2 done!\n");
 }
 
 void grad_cal(
@@ -296,14 +318,47 @@ int main(){
     }
     
     // step 1: Smoothing
+    pthread_t t[THREAD_NUM];
+    // int width_per_thread[THREAD_NUM], height_per_thread[THREAD_NUM];
+    conv_args conv_arg[THREAD_NUM];
+
+    int start_width = 0, start_height = 0;
+    int width_per_thread  = width / THREAD_NUM;
+    // int height_per_thread = height / THREAD_NUM;
     float G[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
-    conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    
+    for(int i = 0; i < 1; i++) {
+        conv_arg[i].input  = p1_gray;
+        conv_arg[i].kernel = G;
+        conv_arg[i].output = fs;
+        conv_arg[i].start_width = 0;//start_width
+        // start_width += width_per_thread;
+        conv_arg[i].end_width = width;//(i != THREAD_NUM - 1) ? start_width : 
+        // conv_arg[i].start_height = start_height;
+        conv_arg[i].start_height = 0;
+        // start_height += height_per_thread;
+        // conv_arg[i].end_height = (i != THREAD_NUM - 1) ? start_height : height;
+        conv_arg[i].end_height = height;
+        conv_arg[i].kernel_size = 3;
+        // std::cout << width << " " << height <<"\n";
+        std::cout << conv_arg[i].start_width << " " << conv_arg[i].end_width << "\n";
+        std::cout << conv_arg[i].start_height << " " << conv_arg[i].end_height << "\n";
+
+    }
+    for(int i = 0; i < 1; i++) {
+        pthread_create(&t[i], NULL, conv, &conv_arg[i]);
+    }
+    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    for(int i = 0; i < 1; i++) {
+        pthread_join(t[i], NULL);
+    }
     // conv(p1_gray, G, fs, 0, width/2, 0, height/2, 3);
     // conv(p1_gray, G, fs, width/2, width, 0, height/2, 3);
     // conv(p1_gray, G, fs, width/2, width, width/2, height, 3);
     // conv(p1_gray, G, fs, 0, width/2, width/2, height, 3);
     
     // step 2: Gradient Computation
+
     float Sx[9] = {
         -1.0,  0.0,  1.0, 
         -2.0,  0.0,  2.0, 
