@@ -7,10 +7,11 @@
 #include <queue>
 #include <pthread.h>
 #include <fstream>
+#include <iomanip>
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
-#define THREAD_NUM 2
+#define THREAD_NUM 1
 pthread_mutex_t output_mutex;
 
 using namespace std;
@@ -37,6 +38,48 @@ struct conv_args{
     int kernel_size;
 };
 
+struct conv2_args{
+    uint8_t *input; 
+    float *kernel;
+    int32_t *output; 
+    int start_width;
+    int end_width; 
+    int start_height; 
+    int end_height; 
+    int kernel_size;
+};
+
+struct grad_args{
+    int32_t *gx; 
+    int32_t *gy;
+    int32_t *output;
+    int start_width;
+    int end_width;
+    int start_height;
+    int end_height;
+};
+
+struct theta_args{
+    int32_t *gx; 
+    int32_t *gy;
+    double *output;
+    int start_width; 
+    int end_width;
+    int start_height; 
+    int end_height;
+};
+
+struct no_max_sup_args{
+    int32_t *input; 
+    int32_t *output;
+    double  *theta;
+    int start_width; 
+    int end_width;
+    int start_height; 
+    int end_height;
+};
+
+
 void* conv(void* args){
     struct conv_args *conv_arg = (struct conv_args*)args;
     uint8_t *input  = conv_arg->input;
@@ -51,8 +94,6 @@ void* conv(void* args){
     float temp_pixel = 0;
     printf("convolution start!\n");
 
-    ofstream myfile;
-    myfile.open ("conv.txt");
 
     // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
@@ -76,21 +117,22 @@ void* conv(void* args){
                 temp_pixel = 255;
             // return the result back to output
             output[i * width + j] = uint8_t(temp_pixel);
-            myfile << temp_pixel;
         }
     }
     printf("convolution done!\n");
-    myfile.close();
     pthread_exit(EXIT_SUCCESS);
 }
 
-void conv2(
-    uint8_t *input, 
-    float *kernel, 
-    int32_t *output, 
-    int start_width, int end_width, 
-    int start_height, int end_height, 
-    int kernel_size){
+void* conv2(void* args){
+    struct conv2_args *conv_arg = (struct conv2_args*)args;
+    uint8_t *input  = conv_arg->input;
+    float *kernel   = conv_arg->kernel;
+    int32_t *output = conv_arg->output;
+    int start_width = conv_arg->start_width;
+    int end_width   = conv_arg->end_width;
+    int start_height= conv_arg->start_height;
+    int end_height  = conv_arg->end_height;
+    int kernel_size = conv_arg->kernel_size;
 
     float temp_pixel = 0;
     printf("convolution2 start!\n");
@@ -116,14 +158,21 @@ void conv2(
         }
     }       
     printf("convolution2 done!\n");
+    pthread_exit(EXIT_SUCCESS);
 }
 
-void grad_cal(
-        int32_t *gx, int32_t *gy, 
-        int32_t *output, 
-        int start_width, int end_width, 
-        int start_height, int end_height){
+void* grad_cal(void* args){
+    struct grad_args *grad_arg = (struct grad_args*)args;
+    int32_t *gx      = grad_arg->gx; 
+    int32_t *gy      = grad_arg->gy; 
+    int32_t *output  = grad_arg->output; 
+    int start_width  = grad_arg->start_width; 
+    int end_width    = grad_arg->end_width;  
+    int start_height = grad_arg->start_height; 
+    int end_height   = grad_arg->end_height; 
+   
     int32_t temp_pixel = 0, temp_index = 0;
+
     printf("gradient calculation start!\n");
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
@@ -133,22 +182,32 @@ void grad_cal(
         }
     }
     printf("gradient calculation done!\n");
+    pthread_exit(EXIT_SUCCESS);
 }
 
-void theta_cal(
-        int32_t *gx, int32_t *gy, 
-        double *output, 
-        int start_width, int end_width, 
-        int start_height, int end_height){
+void* theta_cal(void* args){
+    struct theta_args *theta_arg = (struct theta_args*)args;
+    
+    int32_t *gx = theta_arg->gx; 
+    int32_t *gy = theta_arg->gy; 
+    double *output = theta_arg->output;
+    int start_width = theta_arg->start_width; 
+    int end_width = theta_arg->end_width; 
+    int start_height = theta_arg->start_height; 
+    int end_height = theta_arg->end_height;
+    
     double temp_pixel = 0;
     printf("theta calculation start!\n");
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_pixel = atan2(gy[i * width + j], gx[i * width + j]);
             temp_pixel = temp_pixel * 180 / PI;
+            
             if(temp_pixel < 0)
                 temp_pixel += 180;
+            // some temp_pixel larger than 180, resulting temp_pixel negative
             temp_pixel = 180 - temp_pixel;
+	
             // realign the theta offset due to direction of sobel
 
             if(temp_pixel >= 0 && temp_pixel < 22.5)
@@ -161,18 +220,28 @@ void theta_cal(
                 temp_pixel = 135;
             else if(temp_pixel >= 157.5 && temp_pixel < 180)
                 temp_pixel = 0;
+            else
+            	temp_pixel = 0;
             output[i * width + j] = temp_pixel;
         }
     }
     printf("theta calculation done!\n");
+    pthread_exit(EXIT_SUCCESS);
 }
 
 
-void non_maximum_sup(
-        int32_t *input, int32_t* output, 
-        double* theta, 
-        int start_width, int end_width, 
-        int start_height, int end_height){
+void* non_maximum_sup(void *args){
+ 
+    struct no_max_sup_args *no_max_sup_arg = (struct no_max_sup_args*)args;
+    int32_t *input = no_max_sup_arg->input; 
+    int32_t* output= no_max_sup_arg->output;
+    double* theta  = no_max_sup_arg->theta;
+    int start_width  = no_max_sup_arg->start_width; 
+    int end_width    =  no_max_sup_arg->end_width; 
+    int start_height = no_max_sup_arg->start_height; 
+    int end_height   = no_max_sup_arg->end_height;
+    
+
     int32_t indexMa, indexMb;
     int32_t Ma, Mb;
     double theta_temp;
@@ -203,13 +272,18 @@ void non_maximum_sup(
                 Mb = 0;
             else
                 Mb = input[indexMb];
-            if(input[i * width + j] >= Ma && input[i * width + j] >= Mb)
-                output[i * width + j] = input[i * width + j];
-            else
+            if(input[i * width + j] >= Ma && input[i * width + j] >= Mb){
+	    	output[i * width + j] = input[i * width + j];
+	    }
+            else{
                 output[i * width + j] = 0;
+	    }
+	    if(i * width + j == 240)
+	    	std::cout << theta_temp << " " << input[i * width + j]<< " " << output[i * width + j]  << " " << Ma << " " << Mb<< "\n";
         }
     }
     printf("non-maximum suppression done!\n");
+    pthread_exit(EXIT_SUCCESS);
 }
 
 int32_t Th, Tl;
@@ -322,41 +396,36 @@ int main(){
     // int width_per_thread[THREAD_NUM], height_per_thread[THREAD_NUM];
     conv_args conv_arg[THREAD_NUM];
 
-    int start_width = 0, start_height = 0;
+    int start_width = 0;
     int width_per_thread  = width / THREAD_NUM;
     // int height_per_thread = height / THREAD_NUM;
     float G[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
     
-    for(int i = 0; i < 1; i++) {
+    for(int i = 0; i < THREAD_NUM; i++) {
         conv_arg[i].input  = p1_gray;
         conv_arg[i].kernel = G;
         conv_arg[i].output = fs;
-        conv_arg[i].start_width = 0;//start_width
-        // start_width += width_per_thread;
-        conv_arg[i].end_width = width;//(i != THREAD_NUM - 1) ? start_width : 
-        // conv_arg[i].start_height = start_height;
+        conv_arg[i].start_width = start_width;
+        start_width += width_per_thread;
+        conv_arg[i].end_width = (i != THREAD_NUM - 1) ? start_width : width;// 
         conv_arg[i].start_height = 0;
-        // start_height += height_per_thread;
-        // conv_arg[i].end_height = (i != THREAD_NUM - 1) ? start_height : height;
         conv_arg[i].end_height = height;
         conv_arg[i].kernel_size = 3;
-        // std::cout << width << " " << height <<"\n";
-        std::cout << conv_arg[i].start_width << " " << conv_arg[i].end_width << "\n";
-        std::cout << conv_arg[i].start_height << " " << conv_arg[i].end_height << "\n";
-
     }
-    for(int i = 0; i < 1; i++) {
+    for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, conv, &conv_arg[i]);
     }
     // conv(p1_gray, G, fs, 0, width, 0, height, 3);
-    for(int i = 0; i < 1; i++) {
+    for(int i = 0; i < THREAD_NUM; i++) {
         pthread_join(t[i], NULL);
     }
-    // conv(p1_gray, G, fs, 0, width/2, 0, height/2, 3);
-    // conv(p1_gray, G, fs, width/2, width, 0, height/2, 3);
-    // conv(p1_gray, G, fs, width/2, width, width/2, height, 3);
-    // conv(p1_gray, G, fs, 0, width/2, width/2, height, 3);
-    
+
+    ofstream conv_file;
+    conv_file.open ("conv.txt");
+    for(int i = 0; i < (width) * (height); i++)
+        conv_file << (int)fs[i] << "\n";
+    conv_file.close();
+   
     // step 2: Gradient Computation
 
     float Sx[9] = {
@@ -370,25 +439,168 @@ int main(){
 
     // TODO: gx gy fN modify to int32_t
     int32_t *gx = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
-    conv2(fs, Sx, gx, 0, width, 0, height, 3);
+    // conv2(fs, Sx, gx, 0, width, 0, height, 3);
+    conv2_args conv2_arg[THREAD_NUM];
+    start_width = 0;
+
+    for(int i = 0; i < THREAD_NUM; i++) {
+        conv2_arg[i].input  = fs;
+        conv2_arg[i].kernel = Sx;
+        conv2_arg[i].output = gx;
+        conv2_arg[i].start_width = start_width;
+        start_width += width_per_thread;
+        conv2_arg[i].end_width = (i != THREAD_NUM - 1) ? start_width : width;// 
+        conv2_arg[i].start_height = 0;
+        conv2_arg[i].end_height = height;
+        conv2_arg[i].kernel_size = 3;
+    }
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_create(&t[i], NULL, conv2, &conv2_arg[i]);
+    }
+    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_join(t[i], NULL);
+    }
+
+    ofstream gx_file;
+    gx_file.open ("gx.txt");
+    for(int i = 0; i < (width) * (height); i++)
+        gx_file << (int)gx[i] << "\n";
+    gx_file.close();
+
+    // abort();
     int32_t *gy = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
-    conv2(fs, Sy, gy, 0, width, 0, height, 3);
+    // conv2(fs, Sy, gy, 0, width, 0, height, 3);
+    
+    start_width = 0;
+
+    for(int i = 0; i < THREAD_NUM; i++) {
+        conv2_arg[i].input  = fs;
+        conv2_arg[i].kernel = Sy;
+        conv2_arg[i].output = gy;
+        conv2_arg[i].start_width = start_width;
+        start_width += width_per_thread;
+        conv2_arg[i].end_width = (i != THREAD_NUM - 1) ? start_width : width;// 
+        conv2_arg[i].start_height = 0;
+        conv2_arg[i].end_height = height;
+        conv2_arg[i].kernel_size = 3;
+    }
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_create(&t[i], NULL, conv2, &conv2_arg[i]);
+    }
+    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_join(t[i], NULL);
+    }
+
     free(fs);
+
+    ofstream gy_file;
+    gy_file.open ("gy.txt");
+    for(int i = 0; i < (width) * (height); i++)
+        gy_file << (int)gy[i] << "\n";
+    gy_file.close();
+
     int32_t *M = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
-    grad_cal(gx, gy, M, 0, width, 0, height);
-    // grad_cal(gx, gy, M, 0, width, 0, height/2);
-    // grad_cal(gx, gy, M, 0, width, height/2, height);
+    //grad_cal(gx, gy, M, 0, width, 0, height);
+
+    grad_args grad_arg[THREAD_NUM];
+    start_width = 0;
+
+    for(int i = 0; i < THREAD_NUM; i++) {
+        grad_arg[i].gx = gx;
+        grad_arg[i].gy = gy;
+        grad_arg[i].output = M;
+        grad_arg[i].start_width = start_width;
+        start_width += width_per_thread;
+        grad_arg[i].end_width = (i != THREAD_NUM - 1) ? start_width : width;// 
+        grad_arg[i].start_height = 0;
+        grad_arg[i].end_height = height;
+    }
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_create(&t[i], NULL, grad_cal, &grad_arg[i]);
+    }
+
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_join(t[i], NULL);
+    }
+
+    ofstream M_file;
+    M_file.open ("M.txt");
+    for(int i = 0; i < (width) * (height); i++)
+        M_file << M[i] << "\n";
+    M_file.close();
 
 
     double theta_temp = 0.0;
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
-    theta_cal(gx, gy, theta, 0, width, 0, height);
 
+    struct theta_args theta_arg[THREAD_NUM];
+    // theta_cal(gx, gy, theta, 0, width, 0, height);
+
+    start_width = 0;
+
+    for(int i = 0; i < THREAD_NUM; i++) {
+        theta_arg[i].gx = gx;
+        theta_arg[i].gy = gy;
+        theta_arg[i].output = theta;
+        theta_arg[i].start_width = start_width;
+        start_width += width_per_thread;
+        theta_arg[i].end_width = (i != THREAD_NUM - 1) ? start_width : width;// 
+        theta_arg[i].start_height = 0;
+        theta_arg[i].end_height = height;
+    }
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_create(&t[i], NULL, theta_cal, &theta_arg[i]);
+    }
+    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_join(t[i], NULL);
+    }
+
+
+
+    ofstream theta_file;
+    theta_file.open ("theta.txt");
+    for(int i = 0; i < (width) * (height); i++)
+        theta_file << theta[i] << "\n";
+    theta_file.close();
 
 
     // step 3: Non-maximum Suppression
     int32_t *fN = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
-    non_maximum_sup(M, fN, theta, 0, width, 0, height);
+    struct no_max_sup_args no_max_sup_arg[THREAD_NUM];
+    // non_maximum_sup(M, fN, theta, 0, width, 0, height);
+
+    start_width = 0;
+
+    for(int i = 0; i < THREAD_NUM; i++) {
+        no_max_sup_arg[i].input  = M;
+        no_max_sup_arg[i].output = fN;
+        no_max_sup_arg[i].theta = theta;
+        no_max_sup_arg[i].start_width = start_width;
+        start_width += width_per_thread;
+        no_max_sup_arg[i].end_width = (i != THREAD_NUM - 1) ? start_width : width;// 
+        no_max_sup_arg[i].start_height = 0;
+        no_max_sup_arg[i].end_height = height;
+    }
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_create(&t[i], NULL, non_maximum_sup, &no_max_sup_arg[i]);
+    }
+    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    for(int i = 0; i < THREAD_NUM; i++) {
+        pthread_join(t[i], NULL);
+    }
+
+
+
+    ofstream no_max_sp_file;
+    no_max_sp_file.open ("fN.txt");
+    for(int i = 0; i < (width) * (height); i++)
+        no_max_sp_file << fN[i] << "\n";
+    no_max_sp_file.close();
+
+
 
     // step 4: Double Thresholding
     // get the max and min of fN
