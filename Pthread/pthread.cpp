@@ -11,8 +11,9 @@
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
-#define THREAD_NUM 1
+#define THREAD_NUM 4
 pthread_mutex_t output_mutex;
+pthread_mutex_t visited_mutex;
 
 using namespace std;
 
@@ -305,7 +306,9 @@ void *edge_linking(void *args){
         index = q_th.front();
         q_th.pop();
         if(visited[index] == 0){
+            pthread_mutex_lock(&visited_mutex);
             visited[index] = 1;
+            pthread_mutex_unlock(&visited_mutex);
             if(input[index] >= Tl){
             // since the origin q only push the pixel with value >= Th, 
             // any pixel in queue must be visited after an strong edge pixel
@@ -639,19 +642,30 @@ int main(){
         for(int j = 0 ; j < width ; j += 1){
             temp_index = i * width + j;
             visited[temp_index] = 0;
-            if (fN[temp_index] >= Th)
+            if (fN[temp_index] >= Th){
                 q[queue_index].push(temp_index);
                 queue_index = (queue_index + 1) % THREAD_NUM;
+            }
             fN_linked[temp_index] = 0;
         }
     }
     pthread_t *thread_pool = (pthread_t*)malloc(THREAD_NUM * sizeof(pthread_t));
     pthread_mutex_init(&output_mutex, NULL);
+    pthread_mutex_init(&visited_mutex, NULL);
     
+    edge_link_args input_args[THREAD_NUM];
     for(int i = 0 ; i < THREAD_NUM ; i++){
-        edge_link_args input_args = {fN, fN_linked, visited, 0, width, 0, height, i};
-        pthread_create(&thread_pool[i], NULL, edge_linking, (void *)&input_args);
+        input_args[i].input = fN;
+        input_args[i].output = fN_linked;
+        input_args[i].visited = visited;
+        input_args[i].start_width = 0;
+        input_args[i].end_width = width;
+        input_args[i].start_height = 0;
+        input_args[i].end_height = height;
+        input_args[i].thread_id = i;
+        pthread_create(&thread_pool[i], NULL, edge_linking, (void *)&input_args[i]);
     }
+        
 
     for(int i = 0; i < THREAD_NUM; i++){
         pthread_join(thread_pool[i], NULL);
@@ -659,6 +673,7 @@ int main(){
 
     free(thread_pool);
     pthread_mutex_destroy(&output_mutex);
+    pthread_mutex_destroy(&visited_mutex);
     
     // edge_linking(fN, fN_linked, visited, 0, width, 0, height);
     // for(int i = 0 ; i < height ; i += 1){
