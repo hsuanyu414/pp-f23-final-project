@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <queue>
 #include "../common/CycleTimer.h"
+
+#include <omp.h>
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
@@ -13,6 +15,7 @@
 using namespace std;
 
 int width, height;
+int thread_used;
 
 void conv(
     uint8_t *input, 
@@ -26,6 +29,8 @@ void conv(
     printf("convolution start!\n");
     // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
+
+    #pragma omp parallel for private(temp_pixel, indexi, indexj) schedule(dynamic)
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_pixel = 0;
@@ -63,6 +68,8 @@ void conv2(
     printf("convolution start!\n");
     // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
+
+    #pragma omp parallel for private(temp_pixel, indexi, indexj) schedule(dynamic)
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_pixel = 0;
@@ -92,6 +99,8 @@ void grad_cal(
         int start_height, int end_height){
     int32_t temp_pixel = 0, temp_index = 0;
     printf("gradient calculation start!\n");
+
+    #pragma omp parallel for private(temp_pixel, temp_index) schedule(dynamic)
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_index = i * width + j;
@@ -109,6 +118,8 @@ void theta_cal(
         int start_height, int end_height){
     double temp_pixel = 0;
     printf("theta calculation start!\n");
+
+    #pragma omp parallel for private(temp_pixel) schedule(dynamic)
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_pixel = atan2(gy[i * width + j], gx[i * width + j]);
@@ -143,6 +154,8 @@ void non_maximum_sup(
     int32_t indexMa, indexMb;
     int32_t Ma, Mb;
     double theta_temp;
+
+    #pragma omp parallel for private(indexMa, indexMb, Ma, Mb, theta_temp) schedule(dynamic)
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             theta_temp = theta[i * width + j];
@@ -191,6 +204,7 @@ void edge_linking(
     int32_t index;
     int32_t temp;
     while(!q.empty()){
+        // todo: parallelize using omp
         index = q.front();
         q.pop();
         if(visited[index] == 0){
@@ -233,7 +247,14 @@ void edge_linking(
     printf("edge linking done!\n");
 }
 
-int main(){
+int main(int argc, char *argv[]){
+    if (argc != 2){
+        printf("Usage: ./omp <thread_used>\n");
+        exit(1);
+    }
+    thread_used = atoi(argv[1]);
+    omp_set_num_threads(thread_used);
+
     // char filename[100] = "izuna24.bmp";
     char filename[100]="../common/lena24_512x512.bmp";
 

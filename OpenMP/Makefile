@@ -1,10 +1,11 @@
 .PHONY:all
 
 G++ = g++
-TARGET = serial.cpp
-OUTPUT = serial
+TARGET = omp.cpp
+OUTPUT = omp
+OMP_FLAG = -fopenmp
 
 
-all: serial
-	$(G++) $(TARGET) -o $(OUTPUT)
+all:
+	$(G++) $(OMP_FLAG) $(TARGET) -o $(OUTPUT)
 	
