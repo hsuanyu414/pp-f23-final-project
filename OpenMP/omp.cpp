@@ -203,44 +203,56 @@ void edge_linking(
         int start_height, int end_height){
     int32_t index;
     int32_t temp;
+    queue<int32_t> q_omp[thread_used];
     while(!q.empty()){
         // todo: parallelize using omp
-        index = q.front();
-        q.pop();
-        if(visited[index] == 0){
-            visited[index] = 1;
-            if(input[index] >= Tl){
-            // since the origin q only push the pixel with value >= Th, 
-            // any pixel in queue must be visited after an strong edge pixel
-            // so can be seen as a weak edge pixel connected to an strong edge pixel
-                output[index] = 255;
-                // up
-                if(index - width >= 0)
-                    q.push(index - width);
-                // down
-                if(index + width < width * height)
-                    q.push(index + width);
-                // left
-                if(index % width != 0)
-                    q.push(index - 1);
-                // right
-                if(index % width != width - 1)
-                    q.push(index + 1);
-                // up left
-                if(index - width - 1 >= 0)
-                    q.push(index - width - 1);
-                // up right
-                if(index - width + 1 >= 0)
-                    q.push(index - width + 1);
-                // down left
-                if(index + width - 1 < width * height)
-                    q.push(index + width - 1);
-                // down right
-                if(index + width + 1 < width * height)
-                    q.push(index + width + 1);
+        int count = 0;
+        while(!q.empty()){
+            q_omp[count].push(q.front());
+            q.pop();
+            count = (count + 1) % thread_used;
+        }
+        #pragma omp parallel for private(index) schedule(dynamic)
+        for(int i = 0 ; i < thread_used ; i++){
+            while(!q_omp[i].empty()){
+                index = q_omp[i].front();
+                q_omp[i].pop();
+                if(visited[index] == 0){
+                    visited[index] = 1;
+                    if(input[index] >= Tl){
+                        // since the origin q only push the pixel with value >= Th, 
+                        // any pixel in queue must be visited after an strong edge pixel
+                        // so can be seen as a weak edge pixel connected to an strong edge pixel
+                        output[index] = 255;
+                            // up
+                        if(index - width >= 0)
+                            q_omp[i].push(index - width);
+                        // down
+                        if(index + width < width * height)
+                            q_omp[i].push(index + width);
+                        // left
+                        if(index % width != 0)
+                            q_omp[i].push(index - 1);
+                        // right
+                        if(index % width != width - 1)
+                            q_omp[i].push(index + 1);
+                        // up left
+                        if(index - width - 1 >= 0)
+                            q_omp[i].push(index - width - 1);
+                        // up right
+                        if(index - width + 1 >= 0)
+                            q_omp[i].push(index - width + 1);
+                        // down left
+                        if(index + width - 1 < width * height)
+                            q_omp[i].push(index + width - 1);
+                        // down right
+                        if(index + width + 1 < width * height)
+                            q_omp[i].push(index + width + 1);
+                    }
+                    else
+                        output[index] = 0;
+                }
             }
-            else
-                output[index] = 0;
         }
 
     }
