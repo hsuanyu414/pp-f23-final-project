@@ -5,6 +5,7 @@
 #include <cmath>
 #include <algorithm>
 #include <queue>
+#include "../common/CycleTimer.h"
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
@@ -233,7 +234,11 @@ void edge_linking(
 }
 
 int main(){
-    char filename[100] = "izuna24.bmp";
+    // char filename[100] = "izuna24.bmp";
+    char filename[100]="../common/lena24_512x512.bmp";
+
+    // variables for recording time
+    double startTime, endTime;
 
     FILE *fp = fopen(filename, "rb");
     if(fp == NULL){
@@ -276,12 +281,12 @@ int main(){
     
     // step 1: Smoothing
     float G[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
-    conv(p1_gray, G, fs, 0, width, 0, height, 3);
-    // conv(p1_gray, G, fs, 0, width/2, 0, height/2, 3);
-    // conv(p1_gray, G, fs, width/2, width, 0, height/2, 3);
-    // conv(p1_gray, G, fs, width/2, width, width/2, height, 3);
-    // conv(p1_gray, G, fs, 0, width/2, width/2, height, 3);
     
+    startTime = CycleTimer::currentSeconds();
+    conv(p1_gray, G, fs, 0, width, 0, height, 3);
+    endTime = CycleTimer::currentSeconds();
+    printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
+
     // step 2: Gradient Computation
     float Sx[9] = {
         -1.0,  0.0,  1.0, 
@@ -294,25 +299,41 @@ int main(){
 
     // TODO: gx gy fN modify to int32_t
     int32_t *gx = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    startTime = CycleTimer::currentSeconds();
     conv2(fs, Sx, gx, 0, width, 0, height, 3);
+    endTime = CycleTimer::currentSeconds();
+    printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
+    
     int32_t *gy = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    startTime = CycleTimer::currentSeconds();
     conv2(fs, Sy, gy, 0, width, 0, height, 3);
+    endTime = CycleTimer::currentSeconds();
+    printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
     free(fs);
     int32_t *M = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    
+    
+    startTime = CycleTimer::currentSeconds();
     grad_cal(gx, gy, M, 0, width, 0, height);
-    // grad_cal(gx, gy, M, 0, width, 0, height/2);
-    // grad_cal(gx, gy, M, 0, width, height/2, height);
-
-
+    endTime = CycleTimer::currentSeconds();
+    printf("gradient calculation time: %.3f ms\n", (endTime - startTime) * 1000);
+    
     double theta_temp = 0.0;
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
+    
+    startTime = CycleTimer::currentSeconds();
     theta_cal(gx, gy, theta, 0, width, 0, height);
-
+    endTime = CycleTimer::currentSeconds();
+    printf("theta calculation time: %.3f ms\n", (endTime - startTime) * 1000);
 
 
     // step 3: Non-maximum Suppression
     int32_t *fN = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+
+    startTime = CycleTimer::currentSeconds();
     non_maximum_sup(M, fN, theta, 0, width, 0, height);
+    endTime = CycleTimer::currentSeconds();
+    printf("non-maximum suppression time: %.3f ms\n", (endTime - startTime) * 1000);
 
     // step 4: Double Thresholding
     // get the max and min of fN
@@ -348,14 +369,11 @@ int main(){
             fN_linked[temp_index] = 0;
         }
     }
+    startTime = CycleTimer::currentSeconds();
     edge_linking(fN, fN_linked, visited, 0, width, 0, height);
-    // for(int i = 0 ; i < height ; i += 1){
-    //     for(int j = 0 ; j < width ; j += 1){
-    //         temp_index = i * width + j;
-    //         if(visited[temp_index] == 0)
-    //             fN[temp_index] = 0;
-    //     }
-    // }
+    endTime = CycleTimer::currentSeconds();
+    printf("edge linking time: %.3f ms\n", (endTime - startTime) * 1000);
+    
 
     uint8_t *fN_u8 = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     int32_t max=0, min=1000000;
