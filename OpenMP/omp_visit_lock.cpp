@@ -191,7 +191,7 @@ void non_maximum_sup(
     }
     printf("non-maximum suppression done!\n");
 }
-
+omp_lock_t lock[5120 * 5120];
 int32_t Th, Tl;
 queue<int32_t> q;
 int32_t visit_count[4] = {0};
@@ -205,34 +205,31 @@ void edge_linking(
     int32_t index;
     int32_t temp;
     queue<int32_t> q_omp[thread_used];
+    // lock for visited
+    // omp_lock_t lock[end_width * end_height];
+    for (int i = 0; i < end_width * end_height; i++)
+        omp_init_lock(&lock[i]);
+
     while(!q.empty()){
         // todo: parallelize using omp
         int count = 0;
-        // int q_len = q.size();
-        // int q_len_per_thread = q_len / thread_used;
-        // for(int i = 0 ; i < thread_used ; i++){
-        //     for(int j = 0 ; j < q_len_per_thread ; j++){
-        //         q_omp[i].push(q.front());
-        //         q.pop();
-        //     }
-        // }
-        // while(!q.empty()){
-        //     q_omp[3].push(q.front());
-        //     q.pop();
-        // }
         while(!q.empty()){
             q_omp[count].push(q.front());
             q.pop();
             count = (count + 1) % thread_used;
         }
+        
+
         #pragma omp parallel for private(index) schedule(dynamic)
         for(int i = 0 ; i < thread_used ; i++){
             while(!q_omp[i].empty()){
                 index = q_omp[i].front();
                 q_omp[i].pop();
+                omp_set_lock(&lock[index]);
                 if(visited[index] == 0){
                     visit_count[i] += 1;
                     visited[index] = 1;
+                    omp_unset_lock(&lock[index]);
                     if(input[index] >= Tl){
                         // since the origin q only push the pixel with value >= Th, 
                         // any pixel in queue must be visited after an strong edge pixel
@@ -263,17 +260,24 @@ void edge_linking(
                         if(index + width + 1 < width * height)
                             q_omp[i].push(index + width + 1);
                     }
-                    else
+                    else{
                         output[index] = 0;
+                    }    
+                }
+                else{
+                    omp_unset_lock(&lock[index]);
                 }
             }
         }
 
     }
+    for (int i = 0; i < end_width * end_height; i++)
+        omp_destroy_lock(&lock[i]);
     printf("edge linking done!\n");
     int total_visit_count = 0;
-    for(int i = 0 ; i < thread_used ; i++)
+    for(int i = 0 ; i < thread_used ; i++){
         total_visit_count += visit_count[i];
+    }
     printf("total visit count: %d\n", total_visit_count);
 }
 
@@ -286,7 +290,7 @@ int main(int argc, char *argv[]){
     omp_set_num_threads(thread_used);
 
     // char filename[100] = "izuna24.bmp";
-    char filename[100]="../common/data/8192.bmp";
+    char filename[100]="../common/1_0.5.bmp";
 
     // variables for recording time
     double startTime, endTime;

@@ -181,7 +181,7 @@ void non_maximum_sup(
 
 int32_t Th, Tl;
 queue<int32_t> q;
-
+int32_t visit_count = 0;
 void edge_linking(
         int32_t *input, 
         int32_t* output,
@@ -194,6 +194,7 @@ void edge_linking(
         index = q.front();
         q.pop();
         if(visited[index] == 0){
+            visit_count++;
             visited[index] = 1;
             if(input[index] >= Tl){
             // since the origin q only push the pixel with value >= Th, 
@@ -231,11 +232,12 @@ void edge_linking(
 
     }
     printf("edge linking done!\n");
+    printf("visit count: %d\n", visit_count);
 }
 
 int main(){
     // char filename[100] = "izuna24.bmp";
-    char filename[100]="../common/lena24_512x512.bmp";
+    char filename[100]="../common/lena24_512x512_10x10.bmp";
 
     // variables for recording time
     double startTime, endTime;
