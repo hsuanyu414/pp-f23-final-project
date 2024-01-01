@@ -12,3 +12,5 @@ all:
 	$(G++) $(OMP_FLAG) $(TARGET1) -o $(OUTPUT1)
 	$(G++) $(OMP_FLAG) $(TARGET2) -o $(OUTPUT2)
 	
+clean:
+	rm -rf $(OUTPUT1) $(OUTPUT2)
