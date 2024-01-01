@@ -243,6 +243,7 @@ int main(int argc, char *argv[]){
 
     // variables for recording time
     double startTime, endTime;
+    double totalTime = 0;
 
     // read the bmp file (only 24-bit rgb bmp image is supported)
     FILE *fp = fopen(filename, "rb");
@@ -292,6 +293,7 @@ int main(int argc, char *argv[]){
     startTime = CycleTimer::currentSeconds();
     conv(p1_gray, G, fs, 0, width, 0, height, 3);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
 
     // step 2: Gradient Computation
@@ -310,12 +312,14 @@ int main(int argc, char *argv[]){
     startTime = CycleTimer::currentSeconds();
     conv2(fs, Sx, gx, 0, width, 0, height, 3);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
     
     int32_t *gy = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     startTime = CycleTimer::currentSeconds();
     conv2(fs, Sy, gy, 0, width, 0, height, 3);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
     free(fs);
 
@@ -326,6 +330,7 @@ int main(int argc, char *argv[]){
     startTime = CycleTimer::currentSeconds();
     grad_cal(gx, gy, M, 0, width, 0, height);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("gradient calculation time: %.3f ms\n", (endTime - startTime) * 1000);
     
     // α(x, y) = arctan(gy(x, y) / gx(x, y))
@@ -334,6 +339,7 @@ int main(int argc, char *argv[]){
     startTime = CycleTimer::currentSeconds();
     theta_cal(gx, gy, theta, 0, width, 0, height);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("theta calculation time: %.3f ms\n", (endTime - startTime) * 1000);
 
 
@@ -345,6 +351,7 @@ int main(int argc, char *argv[]){
     startTime = CycleTimer::currentSeconds();
     non_maximum_sup(M, fN, theta, 0, width, 0, height);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("non-maximum suppression time: %.3f ms\n", (endTime - startTime) * 1000);
 
     // step 4: Double Thresholding
@@ -374,6 +381,7 @@ int main(int argc, char *argv[]){
     startTime = CycleTimer::currentSeconds();
     edge_linking(fN, fN_linked, visited, 0, width, 0, height);
     endTime = CycleTimer::currentSeconds();
+    totalTime += (endTime - startTime);
     printf("edge linking time: %.3f ms\n", (endTime - startTime) * 1000);
     
 
@@ -421,6 +429,9 @@ int main(int argc, char *argv[]){
     fclose(fp2);
     free(p);
     printf("done!\n");
+
+    printf("total time: %.3f ms\n", totalTime * 1000);
+
     return 0;
 
 }
