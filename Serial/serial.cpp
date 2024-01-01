@@ -23,9 +23,9 @@ void conv(
     int kernel_size){
 
     float temp_pixel = 0;
-    printf("convolution start!\n");
-    // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
+    printf("convolution start!\n");
+    // conv with 0 padding
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_pixel = 0;
@@ -58,10 +58,10 @@ void conv2(
     int start_width, int end_width, 
     int start_height, int end_height, 
     int kernel_size){
+    // conv with int32_t output
 
     float temp_pixel = 0;
     printf("convolution start!\n");
-    // TODO: boundary check due to padding, modify to the version without padding
     int indexi, indexj;
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
@@ -112,12 +112,14 @@ void theta_cal(
     for(int i = start_height ; i < end_height ; i++){
         for(int j = start_width; j < end_width ; j++){
             temp_pixel = atan2(gy[i * width + j], gx[i * width + j]);
+            // tuen the radian to degree
             temp_pixel = temp_pixel * 180 / PI;
+
+            // realign the theta offset due to direction of sobel
             if(temp_pixel < 0)
                 temp_pixel += 180;
             temp_pixel = 180 - temp_pixel;
-            // realign the theta offset due to direction of sobel
-
+            
             if(temp_pixel >= 0 && temp_pixel < 22.5)
                 temp_pixel = 0;
             else if(temp_pixel >= 22.5 && temp_pixel < 67.5)
@@ -194,7 +196,7 @@ void edge_linking(
         index = q.front();
         q.pop();
         if(visited[index] == 0){
-            visit_count++;
+            // visit_count+=1;
             visited[index] = 1;
             if(input[index] >= Tl){
             // since the origin q only push the pixel with value >= Th, 
@@ -232,7 +234,7 @@ void edge_linking(
 
     }
     printf("edge linking done!\n");
-    printf("visit count: %d\n", visit_count);
+    // printf("visit count: %d\n", visit_count);
 }
 
 int main(int argc, char *argv[]){
