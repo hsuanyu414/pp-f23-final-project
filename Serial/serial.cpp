@@ -235,32 +235,34 @@ void edge_linking(
     printf("visit count: %d\n", visit_count);
 }
 
-int main(){
-    // char filename[100] = "izuna24.bmp";
-    char filename[100]="../common/lena24_512x512_10x10.bmp";
+int main(int argc, char *argv[]){
+    // the input file path
+    char filename[100]="../common/data/1024.bmp";
 
     // variables for recording time
     double startTime, endTime;
 
+    // read the bmp file (only 24-bit rgb bmp image is supported)
     FILE *fp = fopen(filename, "rb");
     if(fp == NULL){
         printf("Error: cannot open the file!\n");
         exit(1);
     }
-    // read the header
+
+    // read the bmp header
     sBmpHeader header = {0};
     fread(&header, sizeof(sBmpHeader), 1, fp);
     width = header.width;
     height = header.height;
     // print_bmp_header(&header);
 
+    // move the file pointer to the beginning of image data
     fseek(fp, header.offset, SEEK_SET);
-    // read each pixel (for 24-bit bmp)
     pixel24 *p = (pixel24 *)malloc(sizeof(pixel24) * width * height);
     fread(p, sizeof(pixel24), width * height, fp);
     fclose(fp);
 
-    // to one dimention gray
+    // turn rgb image to one channel gray
     uint8_t *p1_gray = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     for(int i = 0 ; i < (width) * (height) ; i ++){
         p1_gray[i] = 0;
@@ -273,16 +275,17 @@ int main(){
             p1_gray[temp_index] = uint8_t(temp_int_pixel);
         }
     }
-    
-    // convolution
+        
+    // step 1: Smoothing
+    // fs(x, y) = f(x, y) * G(x, y)
     uint8_t *fs = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
-    
     for(int i = 0 ; i < (width) * (height) ; i ++){
         fs[i] = 0;
     }
-    
-    // step 1: Smoothing
-    float G[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
+
+    float G[9] = {1.0/16, 2.0/16, 1.0/16, 
+                  2.0/16, 4.0/16, 2.0/16, 
+                  1.0/16, 2.0/16, 1.0/16};
     
     startTime = CycleTimer::currentSeconds();
     conv(p1_gray, G, fs, 0, width, 0, height, 3);
@@ -290,6 +293,8 @@ int main(){
     printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
 
     // step 2: Gradient Computation
+    // gx(x, y) = fs(x, y) * Sx(x, y)
+    // gy(x, y) = fs(x, y) * Sy(x, y)
     float Sx[9] = {
         -1.0,  0.0,  1.0, 
         -2.0,  0.0,  2.0, 
@@ -299,7 +304,6 @@ int main(){
          0.0,  0.0,  0.0, 
          1.0,  2.0,  1.0};
 
-    // TODO: gx gy fN modify to int32_t
     int32_t *gx = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     startTime = CycleTimer::currentSeconds();
     conv2(fs, Sx, gx, 0, width, 0, height, 3);
@@ -312,6 +316,8 @@ int main(){
     endTime = CycleTimer::currentSeconds();
     printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
     free(fs);
+
+    // M(x, y) = sqrt(gx(x, y)^2 + gy(x, y)^2)
     int32_t *M = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     
     
@@ -320,7 +326,7 @@ int main(){
     endTime = CycleTimer::currentSeconds();
     printf("gradient calculation time: %.3f ms\n", (endTime - startTime) * 1000);
     
-    double theta_temp = 0.0;
+    // α(x, y) = arctan(gy(x, y) / gx(x, y))
     double *theta = (double *)malloc(sizeof(double) * (width) * (height));
     
     startTime = CycleTimer::currentSeconds();
@@ -330,6 +336,8 @@ int main(){
 
 
     // step 3: Non-maximum Suppression
+    // fN(x, y) = M(x, y) if M(x, y) >= M(x + α(x, y), y + β(x, y)) and M(x, y) >= M(x - α(x, y), y - β(x, y))
+    // where α, β are the neighboring pixels in the direction of the gradient
     int32_t *fN = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
 
     startTime = CycleTimer::currentSeconds();
@@ -338,26 +346,16 @@ int main(){
     printf("non-maximum suppression time: %.3f ms\n", (endTime - startTime) * 1000);
 
     // step 4: Double Thresholding
-    // get the max and min of fN
+    // strong edge: fN(x, y) >= Th
+    // weak edge: Tl <= fN(x, y) < Th
+    // non-edge: fN(x, y) < Tl
+    // Th defined as the 10% of the maximum value of fN
+    // Tl defined as the 10% of Th
     int32_t max_fN_index = std::max_element(fN, fN + width * height) - fN;
     Th = fN[max_fN_index] * 0.1;
     Tl = Th * 0.1;
 
     // step 5: Edge Tracking by Hysteresis
-    // for(int i = 0 ; i < height ; i += 1){
-    //     for(int j = 0 ; j < width ; j += 1){
-    //         if(fN[i * width + j] >= Th)
-    //             fN[i * width + j] = 255;
-    //         else if(fN[i * width + j] <= Tl)
-    //             fN[i * width + j] = 0;
-    //         else{
-    //             if(fN[(i - 1) * width + j] >= Th || fN[(i + 1) * width + j] >= Th || fN[i * width + j - 1] >= Th || fN[i * width + j + 1] >= Th)
-    //                 fN[i * width + j] = 255;
-    //             else
-    //                 fN[i * width + j] = 0;
-    //         }
-    //     }
-    // }
     // edge tracking by bfs
     int32_t *visited = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
     int32_t *fN_linked = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
@@ -377,6 +375,7 @@ int main(){
     printf("edge linking time: %.3f ms\n", (endTime - startTime) * 1000);
     
 
+    // normalize the result to 0~255
     uint8_t *fN_u8 = (uint8_t *)malloc(sizeof(uint8_t) * (width) * (height));
     int32_t max=0, min=1000000;
     for(int i = 0 ; i < height ; i += 1){
@@ -388,7 +387,6 @@ int main(){
     }
     // printf("max: %d, min: %d\n", max, min);
     // printf("====================================\n");
-
     for(int i = 0 ; i < height ; i += 1){
         for(int j = 0 ; j < width ; j += 1){
             temp_index = i * width + j;
@@ -411,7 +409,7 @@ int main(){
 
 
     // write to a new file
-    FILE *fp2 = fopen("output_with_bfs.bmp", "wb");
+    FILE *fp2 = fopen("output.bmp", "wb");
     if(fp2 == NULL){
         printf("Error: cannot open the file!\n");
         exit(1);
@@ -422,7 +420,6 @@ int main(){
     free(p);
     printf("done!\n");
     return 0;
-
 
 }
 
