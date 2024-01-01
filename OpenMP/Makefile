@@ -1,11 +1,16 @@
 .PHONY:all
 
 G++ = g++
-TARGET = omp.cpp
-OUTPUT = omp
+TARGET1 = omp.cpp
+TARGET2 = omp_visit_lock.cpp
+OUTPUT1 = omp
+OUTPUT2 = omp_visit_lock
 OMP_FLAG = -fopenmp
 
 
 all:
-	$(G++) $(OMP_FLAG) $(TARGET) -o $(OUTPUT)
+	$(G++) $(OMP_FLAG) $(TARGET1) -o $(OUTPUT1)
+	$(G++) $(OMP_FLAG) $(TARGET2) -o $(OUTPUT2)
 	
+clean:
+	rm -rf $(OUTPUT1) $(OUTPUT2)
