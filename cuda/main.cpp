@@ -3,33 +3,86 @@
 #include <stdio.h>
 #include <queue>
 #include <algorithm>
+#include <cmath>
 #include "bmp.h"
+#include "../common/CycleTimer.h"
 
 using namespace std;
 
 int width, height;
 
-extern void conv8(uint8_t *input, float *kernel, uint8_t *output, 
-                 int start_width, int end_width, int start_height, 
-                 int end_height, int kernel_size);
-extern void conv32(uint8_t *input, float *kernel, int32_t *output, 
-                 int start_width, int end_width, int start_height, 
-                 int end_height, int kernel_size);
-extern void grad_cal(int32_t *gx, int32_t *gy, int32_t *output, int start_width, 
-                     int end_width, int start_height, int end_height);
-extern void theta_cal(int32_t *gx, int32_t *gy, double *output, int start_width, 
-                     int end_width, int start_height, int end_height);
-extern void non_maximum_sup(int32_t *input, int32_t *output, double *theta,
-                            int start_width, int end_width, int start_height, int end_height);
+extern void canny_edge_detection(uint8_t *input, int32_t *output, int start_width, 
+    int end_width, int start_height, int end_height);
+
+extern void edge_link_bfs(int32_t *input, int32_t *output, int start_width, 
+                         int end_width, int start_height, int end_height, int32_t Th, int32_t Tl);
 
 int32_t Th, Tl;
-queue<int32_t> q; 
+queue<int32_t> q;
+
+void edge_linking(
+        int32_t *input, 
+        int32_t* output,
+        int32_t* visited, 
+        int start_width, int end_width, 
+        int start_height, int end_height){
+    int32_t index;
+    int32_t temp;
+    while(!q.empty()){
+        index = q.front();
+        q.pop();
+        if(visited[index] == 0){
+            visited[index] = 1;
+            if(input[index] >= Tl){
+            // since the origin q only push the pixel with value >= Th, 
+            // any pixel in queue must be visited after an strong edge pixel
+            // so can be seen as a weak edge pixel connected to an strong edge pixel
+                output[index] = 255;
+                // up
+                if(index - width >= 0)
+                    q.push(index - width);
+                // down
+                if(index + width < width * height)
+                    q.push(index + width);
+                // left
+                if(index % width != 0)
+                    q.push(index - 1);
+                // right
+                if(index % width != width - 1)
+                    q.push(index + 1);
+                // up left
+                if(index - width - 1 >= 0)
+                    q.push(index - width - 1);
+                // up right
+                if(index - width + 1 >= 0)
+                    q.push(index - width + 1);
+                // down left
+                if(index + width - 1 < width * height)
+                    q.push(index + width - 1);
+                // down right
+                if(index + width + 1 < width * height)
+                    q.push(index + width + 1);
+            }
+            else
+                output[index] = 0;
+        }
+
+    }
+    printf("edge linking done!\n");
+}
 
 int main(int argc, char *argv[]){
     /* read the image file from prompt */
-    if(argc != 2){
+    if(argc > 3){
         fprintf(stderr, "Usage: ./program <file_path>\n");
         exit(1);
+    }
+
+    /* if cuda_bfs is true, use cuda edge linking */
+    bool cuda_bfs = false;
+    if(argc == 3){
+        if(strcmp(argv[2], "cuda_bfs") == 0)
+            cuda_bfs = true;
     }
     FILE *f = fopen(argv[1], "rb");
     if(f == NULL){
@@ -44,6 +97,8 @@ int main(int argc, char *argv[]){
     }
     width = header.width;
     height = header.height;
+
+    double startTime, endTime;
 
     /* read the image */
     fseek(f, header.offset, SEEK_SET);
@@ -65,41 +120,89 @@ int main(int argc, char *argv[]){
         }
     }
 
-    /* step1: smoothing */
-    uint8_t *fs = (uint8_t *)calloc(width * height, sizeof(uint8_t));
-    float G[9] = {1.0/16, 2.0/16, 1.0/16, 2.0/16, 4.0/16, 2.0/16, 1.0/16, 2.0/16, 1.0/16};
-    printf("conv start\n");
-    conv8(pi_gray, G, fs, 0, width, 0, height, 3);
-    printf("conv end\n");
-
-    /* step2: gradient computation */
-    float Sx[9] = {-1.0, 0.0, 1.0, -2.0, 0.0, 2.0, -1.0, 0.0, 1.0};
-    float Sy[9] = {-1.0, -2.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0};
-
-    int32_t *gx = (int32_t *)malloc(width * height * sizeof(int32_t));
-    int32_t *gy = (int32_t *)malloc(width * height * sizeof(int32_t));
-    printf("gradient start\n");
-    conv32(fs, Sx, gx, 0, width, 0, height, 3);
-    conv32(fs, Sy, gy, 0, width, 0, height, 3);
-    printf("gradient end\n");
-
-    int32_t *M = (int32_t *)malloc(width * height * sizeof(int32_t));
-    grad_cal(gx, gy, M, 0, width, 0, height);
-
-    double *theta = (double *)malloc(width * height * sizeof(double));
-    theta_cal(gx, gy, theta, 0, width, 0, height);
-
-    /* step3: Non-Maximum Suppression */
+    /* step1~5 */
     int32_t * fN = (int32_t *)malloc(width * height * sizeof(int32_t));
-    non_maximum_sup(M, fN, theta, 0, width, 0, height);
 
-    /* step4: Double Thresholding */
+    startTime = CycleTimer::currentSeconds();
+    canny_edge_detection(pi_gray, fN, 0, width, 0, height);
+    endTime = CycleTimer::currentSeconds();
+    double non_maximum_sup_time = (endTime - startTime) * 1000;
+    printf("step1~5 time: %.3f ms\n", non_maximum_sup_time);
+
+    /* step6: Double Thresholding */
     int32_t max_fN_index = std::max_element(fN, fN + width * height) - fN;
     Th = fN[max_fN_index] * 0.1;
     Tl = Th * 0.1;
 
+    /* step7: Edge Linking by BFS */
+    int32_t *fN_linked = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+    double edge_link_bfs_time;
+
+    if(cuda_bfs){
+        startTime = CycleTimer::currentSeconds();
+        edge_link_bfs(fN, fN_linked, 0, width, 0, height, Th, Tl);
+        endTime = CycleTimer::currentSeconds();
+        edge_link_bfs_time = (endTime - startTime) * 1000;
+        printf("edge_link_bfs time: %.3f ms\n", edge_link_bfs_time);
+        printf("edge_link_bfs end\n");
+    }
+
+    else{
+        /* serial edge linking */
+        int32_t *visited = (int32_t *)malloc(sizeof(int32_t) * (width) * (height));
+        for(int i = 0 ; i < height ; i += 1){
+            for(int j = 0 ; j < width ; j += 1){
+                temp_index = i * width + j;
+                visited[temp_index] = 0;
+                if (fN[temp_index] >= Th)
+                    q.push(temp_index);
+                fN_linked[temp_index] = 0;
+            }
+        }
+        startTime = CycleTimer::currentSeconds();
+        edge_linking(fN, fN_linked, visited, 0, width, 0, height);
+        endTime = CycleTimer::currentSeconds();
+        edge_link_bfs_time = (endTime - startTime) * 1000;
+        printf("edge_link_bfs time: %.3f ms\n", edge_link_bfs_time);
+    }
+    free(fN);
+
+    /* compare with golden */
+    // int32_t *golden = (int32_t *)malloc(width * height * sizeof(int32_t));
+    // char *file_name = strrchr(argv[1], '/');
+    // file_name++;
+    // char *dot = strrchr(file_name, '.');
+    // *dot = '\0';
+    // char golden_file_name[100];
+    // sprintf(golden_file_name, "%s_golden.txt", file_name);
+    // printf("golden_file_name: %s\n", golden_file_name);
+    // FILE *f_golden = fopen(golden_file_name, "r");
+    // for(int i = 0 ; i < height ; i++){
+    //     for(int j = 0 ; j < width ; j++){
+    //         temp_index = i * width + j;
+    //         fscanf(f_golden, "%d", &golden[temp_index]);
+    //     }
+    // }
+    // fclose(f_golden);
+
+    // int32_t error = 0;
+    // for(int i = 0 ; i < height ; i++){
+    //     for(int j = 0 ; j < width ; j++){
+    //         temp_index = i * width + j;
+    //         if(fN_linked[temp_index] != golden[temp_index])
+    //             error++;
+    //     }
+    // }
+    // printf("error: %d\n", error);
+    // printf("error rate: %.3f\n", (double)error / (width * height) * 100);
+    // printf("correct rate: %.3f\n", 100 - (double)error / (width * height) * 100);
+
+    /* total time */
+    double total_time = non_maximum_sup_time + edge_link_bfs_time;
+    printf("total time: %f ms\n", total_time);
+
     /* normalize to uint8 */
-    int32_t *nor_img = fN;
+    int32_t *nor_img = fN_linked;
     uint8_t *fN_u8 = (uint8_t *)malloc(width * height * sizeof(uint8_t));
     int32_t max=0, min=1000000;
     for(int i = 0 ; i < height ; i++){
@@ -109,8 +212,6 @@ int main(int argc, char *argv[]){
             min = min < nor_img[temp_index] ? min : nor_img[temp_index];
         }
     }
-
-    printf("max: %d, min: %d\n", max, min);
 
     for(int i = 0; i < height; i++){
         for(int j = 0; j < width; j++){
@@ -141,9 +242,7 @@ int main(int argc, char *argv[]){
     fwrite(&header, sizeof(sBmpHeader), 1, f2);
     fwrite(final_result, sizeof(pixel24), width * height, f2);
     fclose(f2);
-    free(p);
-    free(pi_gray);
-    free(fs);
+    free(fN_linked);
     free(final_result);
     return 0;
 }

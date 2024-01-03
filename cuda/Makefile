@@ -4,8 +4,8 @@ NVCC_FLAGS = --device-c -gencode=arch=compute_61,code=sm_61 -Xcompiler '-fPIC' -
 GCC_FLAGS = -c -O3
 LINK_FLAGS = -rdc=true -gencode=arch=compute_61,code=sm_61 -Xcompiler '-fPIC' 
 
-OBJS = conv.o theta_cal.o grad_cal.o non_maximum_sup.o main.o
-TARGET = program
+OBJS = canny.o edge_link.o main.o
+TARGET = canny
 IMG = output.bmp
 
 all: $(TARGET)
@@ -13,16 +13,10 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(NVCC) $(LINK_FLAGS) -o $@ $^
 
-conv.o: conv.cu
+canny.o: canny.cu
 	$(NVCC) $(NVCC_FLAGS) -o $@ $<
 
-theta_cal.o: theta_cal.cu
-	$(NVCC) $(NVCC_FLAGS) -o $@ $<
-
-grad_cal.o: grad_cal.cu
-	$(NVCC) $(NVCC_FLAGS) -o $@ $<
-
-non_maximum_sup.o: non_maximum_sup.cu
+edge_link.o: edge_link.cu
 	$(NVCC) $(NVCC_FLAGS) -o $@ $<
 
 main.o: main.cpp
