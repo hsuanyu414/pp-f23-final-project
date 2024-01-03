@@ -1,4 +1,4 @@
-CC=g++
+CC=g++ 
 SRC=pthread
 FLAGS= -lpthread -march=native
 
