@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <fstream>
 #include <iomanip>
+#include "CycleTimer.h"
 // read an rgb bmp image and transfer it to gray image
 
 #define PI 3.14159265
@@ -241,7 +242,6 @@ void* non_maximum_sup(void *args){
     int end_width    =  no_max_sup_arg->end_width; 
     int start_height = no_max_sup_arg->start_height; 
     int end_height   = no_max_sup_arg->end_height;
-    
 
     int32_t indexMa, indexMb;
     int32_t Ma, Mb;
@@ -279,8 +279,6 @@ void* non_maximum_sup(void *args){
             else{
                 output[i * width + j] = 0;
 	    }
-	    if(i * width + j == 240)
-	    	std::cout << theta_temp << " " << input[i * width + j]<< " " << output[i * width + j]  << " " << Ma << " " << Mb<< "\n";
         }
     }
     printf("non-maximum suppression done!\n");
@@ -302,20 +300,22 @@ void *edge_linking(void *args){
     int end_height = ((edge_link_args *)args)->end_height;
     int thread_id = ((edge_link_args *)args)->thread_id;
     queue<int32_t> q_th = q[thread_id];
+    long long int count = 0;
     while(!q_th.empty()){
         index = q_th.front();
         q_th.pop();
         if(visited[index] == 0){
-            pthread_mutex_lock(&visited_mutex);
+            count++;
+            // pthread_mutex_lock(&visited_mutex);
             visited[index] = 1;
-            pthread_mutex_unlock(&visited_mutex);
+            // pthread_mutex_unlock(&visited_mutex);
             if(input[index] >= Tl){
             // since the origin q only push the pixel with value >= Th, 
             // any pixel in queue must be visited after an strong edge pixel
             // so can be seen as a weak edge pixel connected to an strong edge pixel
-                pthread_mutex_lock(&output_mutex);
+                // pthread_mutex_lock(&output_mutex);
                 output[index] = 255;
-                pthread_mutex_unlock(&output_mutex);
+                // pthread_mutex_unlock(&output_mutex);
                 // up
                 if(index - width >= 0)
                     q_th.push(index - width);
@@ -342,18 +342,20 @@ void *edge_linking(void *args){
                     q_th.push(index + width + 1);
             }
             else{
-                pthread_mutex_lock(&output_mutex);
+                // pthread_mutex_lock(&output_mutex);
                 output[index] = 0;
-                pthread_mutex_unlock(&output_mutex);
+                // pthread_mutex_unlock(&output_mutex);
             }
         }
 
     }
+    //cout << thread_id << " " << count << "\n"; 
     printf("edge linking done!\n");
+    pthread_exit(EXIT_SUCCESS);
 }
 
 int main(){
-    char filename[100] = "izuna24.bmp";
+    char filename[100] = "izuna24.bmp";//"izuna24.bmp";
 
     FILE *fp = fopen(filename, "rb");
     if(fp == NULL){
@@ -396,6 +398,9 @@ int main(){
     
     // step 1: Smoothing
     pthread_t t[THREAD_NUM];
+    double startTime, endTime, total_time = 0;
+    
+
     // int width_per_thread[THREAD_NUM], height_per_thread[THREAD_NUM];
     conv_args conv_arg[THREAD_NUM];
 
@@ -415,16 +420,22 @@ int main(){
         conv_arg[i].end_height = height;
         conv_arg[i].kernel_size = 3;
     }
+
+    startTime = CycleTimer::currentSeconds();
+
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, conv, &conv_arg[i]);
     }
-    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_join(t[i], NULL);
     }
 
+    endTime = CycleTimer::currentSeconds();
+    printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
     ofstream conv_file;
-    conv_file.open ("conv.txt");
+    conv_file.open ("golden/conv.txt");
     for(int i = 0; i < (width) * (height); i++)
         conv_file << (int)fs[i] << "\n";
     conv_file.close();
@@ -457,6 +468,8 @@ int main(){
         conv2_arg[i].end_height = height;
         conv2_arg[i].kernel_size = 3;
     }
+
+    startTime = CycleTimer::currentSeconds();
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, conv2, &conv2_arg[i]);
     }
@@ -465,8 +478,12 @@ int main(){
         pthread_join(t[i], NULL);
     }
 
+    endTime = CycleTimer::currentSeconds();
+    printf("convolution_x time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
     ofstream gx_file;
-    gx_file.open ("gx.txt");
+    gx_file.open ("golden/gx.txt");
     for(int i = 0; i < (width) * (height); i++)
         gx_file << (int)gx[i] << "\n";
     gx_file.close();
@@ -488,18 +505,23 @@ int main(){
         conv2_arg[i].end_height = height;
         conv2_arg[i].kernel_size = 3;
     }
+
+    startTime = CycleTimer::currentSeconds();
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, conv2, &conv2_arg[i]);
     }
-    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_join(t[i], NULL);
     }
 
+    endTime = CycleTimer::currentSeconds();
+    printf("convolution_y time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
     free(fs);
 
     ofstream gy_file;
-    gy_file.open ("gy.txt");
+    gy_file.open ("golden/gy.txt");
     for(int i = 0; i < (width) * (height); i++)
         gy_file << (int)gy[i] << "\n";
     gy_file.close();
@@ -520,16 +542,21 @@ int main(){
         grad_arg[i].start_height = 0;
         grad_arg[i].end_height = height;
     }
+
+    startTime = CycleTimer::currentSeconds();
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, grad_cal, &grad_arg[i]);
     }
-
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_join(t[i], NULL);
     }
 
+    endTime = CycleTimer::currentSeconds();
+    printf("grad time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
     ofstream M_file;
-    M_file.open ("M.txt");
+    M_file.open ("golden/M.txt");
     for(int i = 0; i < (width) * (height); i++)
         M_file << M[i] << "\n";
     M_file.close();
@@ -553,18 +580,22 @@ int main(){
         theta_arg[i].start_height = 0;
         theta_arg[i].end_height = height;
     }
+    startTime = CycleTimer::currentSeconds();
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, theta_cal, &theta_arg[i]);
     }
-    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_join(t[i], NULL);
     }
 
+    endTime = CycleTimer::currentSeconds();
+    printf("theta time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
 
 
     ofstream theta_file;
-    theta_file.open ("theta.txt");
+    theta_file.open ("golden/theta.txt");
     for(int i = 0; i < (width) * (height); i++)
         theta_file << theta[i] << "\n";
     theta_file.close();
@@ -587,22 +618,26 @@ int main(){
         no_max_sup_arg[i].start_height = 0;
         no_max_sup_arg[i].end_height = height;
     }
+
+    startTime = CycleTimer::currentSeconds();
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_create(&t[i], NULL, non_maximum_sup, &no_max_sup_arg[i]);
     }
-    // conv(p1_gray, G, fs, 0, width, 0, height, 3);
     for(int i = 0; i < THREAD_NUM; i++) {
         pthread_join(t[i], NULL);
     }
 
+    endTime = CycleTimer::currentSeconds();
+    printf("no max time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
 
 
     ofstream no_max_sp_file;
-    no_max_sp_file.open ("fN.txt");
+    no_max_sp_file.open ("golden/fN.txt");
     for(int i = 0; i < (width) * (height); i++)
         no_max_sp_file << fN[i] << "\n";
     no_max_sp_file.close();
-
 
 
     // step 4: Double Thresholding
@@ -654,6 +689,8 @@ int main(){
     pthread_mutex_init(&visited_mutex, NULL);
     
     edge_link_args input_args[THREAD_NUM];
+    
+    startTime = CycleTimer::currentSeconds();
     for(int i = 0 ; i < THREAD_NUM ; i++){
         input_args[i].input = fN;
         input_args[i].output = fN_linked;
@@ -665,11 +702,16 @@ int main(){
         input_args[i].thread_id = i;
         pthread_create(&thread_pool[i], NULL, edge_linking, (void *)&input_args[i]);
     }
-        
-
     for(int i = 0; i < THREAD_NUM; i++){
         pthread_join(thread_pool[i], NULL);
     }
+    endTime = CycleTimer::currentSeconds();
+    printf("edge linking time: %.3f ms\n", (endTime - startTime) * 1000);
+    total_time += (endTime - startTime);
+
+    printf("total time: %.3f ms\n", (total_time) * 1000);
+    // endTime = CycleTimer::currentSeconds();
+    // printf("convolution time: %.3f ms\n", (endTime - startTime) * 1000);
 
     free(thread_pool);
     pthread_mutex_destroy(&output_mutex);
