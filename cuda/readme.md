@@ -1,19 +1,20 @@
-# CUDA Canny Edge Detection
+# Canny Edge Detection (CUDA ver.)
 
-## Usage
+## 使用方法
 
-### Build the Program
+### 編譯
 
 ```
 make
 ```
 
-### Execute
+### 執行
 
 ```
-./canny <filename> <edge_link_method>
+./canny <filename> <edge_linking_method>
 ```
 
+* example
 ```
 # using cuda edge linking
 ./canny ../common/data/1024.bmp cuda_bfs
