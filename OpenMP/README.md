@@ -19,7 +19,7 @@
 `./omp_visit_lock [thread_num]`
 
 ## 實驗調整
-若要進行 omp 及 omp_visit_lock 的實驗，請修改 omp.cpp line 225 及 line 268 取消註解
+若要進行 omp 及 omp_visit_lock 的實驗，請修改 omp.cpp line 225 及 line 265~268 取消註解
 
 ## 輸出
 執行結果會列出各個步驟的執行時間以及其加總，並將結果輸出至 `output.bmp` 中

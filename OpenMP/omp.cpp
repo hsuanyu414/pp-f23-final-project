@@ -262,9 +262,9 @@ void edge_linking(
 
     }
     printf("edge linking done!\n");
-    int total_visit_count = 0;
-    for(int i = 0 ; i < thread_used ; i++)
-        total_visit_count += visit_count[i];
+    // int total_visit_count = 0;
+    // for(int i = 0 ; i < thread_used ; i++)
+    //     total_visit_count += visit_count[i];
     // printf("total visit count: %d\n", total_visit_count);
 }
 
