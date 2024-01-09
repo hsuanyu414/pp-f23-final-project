@@ -288,7 +288,7 @@ int main(int argc, char *argv[]){
     char filename[100]="../common/data/1024.bmp";
     
     if (argc != 2){
-        printf("Usage: ./omp <thread_used>\n");
+        printf("Usage: ./omp_visit_lock <thread_used>\n");
         exit(1);
     }
     thread_used = atoi(argv[1]);
