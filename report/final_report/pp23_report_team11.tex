@@ -161,7 +161,7 @@
 %% article.
 \begin{abstract}
   本報告中，我們利用不同的平行化 API 加速 Canny Edge Detection 演算法，分析各個步驟的最佳平行化方式，
-  並比較了在不同圖片尺寸下的執行時間與使用不同數量的 thread 的 加速效果。
+  並比較了在不同圖片尺寸下的執行時間與使用不同數量的 thread 的 speedup。
 \end{abstract}
 
 %%
@@ -237,7 +237,7 @@
   工業檢驗相關研究領域廣泛使用。 \\
   Canny Edge Detection的優點可以分為以下幾點
   \begin{enumerate}
-    \item Accurate edge localization : 可以精準的定位圖片中的邊緣，確保僅保留重要的邊緣
+    \item Accurate edge localization : 可以精準的定位圖片中的邊緣，確保僅保留重要的邊緣。
     \item Low error rate : 演算法中double thresholding 與 edge tracking的機制降低誤判邊緣的可能性，
     因此有較低錯誤率。
     \item Single response to edges : 圖片中每條邊緣在輸出僅由single response表示，
@@ -253,8 +253,8 @@
   \end{enumerate}
   Canny Edge Detection的計算成本相當高，包含多個卷積、
   Gradient Computation、Nonmaxima Suppression、BFS搜尋。雖然複雜，
-  但計算間有獨立性，可使用平行處理來加速。透過將影像劃分為多個區域，使用thread
-  平行處理每個區域，在多核心處理器上加速；或使用GPU矩陣乘法來加速卷積運算。
+  但計算間有獨立性，可使用平行處理來加速。透過將影像劃分為多個區域，使用多個 thread
+  平行處理每個區域，在多核心處理器上加速；或使用GPU來加速卷積運算。
   藉由平行運算，可以在不影響正確性的情形下提升計算效率與throughput，滿足需要處理大量資料的需求。
 
 \section{Statement of Problem}
@@ -346,11 +346,17 @@ weak pixel 和 non-relevant pixel，分別表示為為 edge、可能為 edge、�
 \subsection{Pthread}
 
 在 smoothing、gradient calculation、nonmaxima suppression、double thresholding 中，
-serial 方法的運算可以簡括為 : 依序遍歷圖片的所有pixel，執行對應演算法的運算。
+serial 方法的運算可以簡括為 : 依序遍歷圖片的所有 pixel，執行對應演算法的運算。
 由於實作上採用多個 for loop 來進行運算，整體運算彼此獨立，執行結果互不影響，
 所以在利用 Pthread 平行化時可以將圖片拆成多個子單元，每個 thread 負責運算其中一個或多個子單元；
 由於各步驟的運算是基於上一步驟的結果，因此在每個步驟結束時都需要等待所有 thread 都執行完畢，
-流程圖如Figure \ref{fig:pthread}所示。
+流程圖如Figure \ref{fig:pthread}所示。\\
+Edge linking 步驟中，serial 方法會維持一個queue，queue內儲存要搜尋之所有點，
+每次依序從 queue 中 pop 一個新元素出來，檢查該點周圍是否有可以連接的點存在，
+假如存在，則再次將點放入queue的尾端，等待之後再次檢查。
+Pthread 平行化則是採用同等於 thread 數量的 queue，每個 thread 維護各自的 queue。
+在初始階段是先存放 strong pixel 位置的 queue 會先將所有點平均分配給四個 thread。
+而後各個 thread 再根據各自的 queue 進行 BFS 運算，直到各自的queue為空。
 
 \begin{figure}[h]
   \centering
@@ -359,25 +365,16 @@ serial 方法的運算可以簡括為 : 依序遍歷圖片的所有pixel，執�
   \label{fig:pthread}
 \end{figure}
 
-Edge linking 步驟中，seria 方法會維持一個queue，queue內儲存要搜尋之所有點，
-每次依序從 queue 中 pop 一個新元素出來，檢查該點周圍是否有可以連接的點存在，
-假如存在，則再次將點放入queue的尾端，等待之後再次檢查。
-Pthread 平行化則是採用同等於 thread 數量的 queue，每個 thread 維護各自的 queue。
-在初始階段是先存放 strong pixel 位置的 queue 會先將所有點平均分配給四個 thread。
-而後各個 thread 再根據各自的 queue 進行 BFS 運算，直到各自的queue為空。
-
 \subsubsection{Load Balancing Problem} \label{load_balancing}
 
 在 Pthread 中，考慮到在 edge linking 階段每個點要搜尋附近是否有可以相連的點，
 接著下一個階段再依序檢查上一輪檢查點之附近的點。因為圖片中的邊緣的分布不一定平均，
 我們推測經過一段時間後，不同 thread 處理的 pixel 數量會有落差，造成執行時間被單一工作量較大的 thread 拖累。
 因此我們嘗試建立一個可以讓各 thread 共享的 queue，在每個 BFS iteration 結束時，
-重新統整及分配每一個 thread 要處理的pixel數量，避免工作量不均的狀況。
-
+重新統整及分配每一個 thread 要處理的pixel數量，避免工作量不均的狀況。 \\
 Load balancing 實作的方式，在每個 iteration 結束前，會有 barrier 讓 thread 暫時被 block 住，
 等到所有 thread 執行到此，接著將下一個 iteration 要搜尋的位置 push 到共享的 queue 中。
-最後由 master thread 分配各個 thread 下一輪要遍歷的點，不斷重複，直到所有點都被搜尋完。
-
+最後由 master thread 分配各個 thread 下一輪要遍歷的點，不斷重複，直到所有點都被搜尋完。 \\
 我們預期這樣的做法可以讓各 thread 的總工作量達到平衡，但同時也會有利用 barrier 所造成的額外負荷，
 因此我們會在實驗結果中比較有無使用 load balancing 的差異，並分析其效能。
 
@@ -391,8 +388,7 @@ OpenMP 的實作方式同樣是將沒有資料相依性的 smoothing、gradient 
 在 edge linking 運算中，需要紀錄圖像中各點是否已經被拜訪過，以避免同一點被拜訪多次，
 因此我們利用一個各 thread 共享的陣列來記錄各點的拜訪狀態。
 在實作時，我們發現若沒有對訪問陣列上鎖，可能會有 race condition，造成同一像素的被拜訪多次，造成不必要的時間浪費，
-所以我們提出在這一步利用 \emph{omp\_lock\_t} 對訪問陣列上鎖，確保同一時間只有一個 thread 能夠存取訪問陣列的某一元素。
-
+所以我們提出在這一步利用 \emph{omp\_lock\_t} 對訪問陣列上鎖，確保同一時間只有一個 thread 能夠存取訪問陣列的某一元素。 \\
 我們預期上鎖後可以降低對同一像素重複拜訪，不過同時也會有上鎖所造成的額外負荷，
 因此我們會在實驗結果中比較有無使用上鎖的差異，並分析其效能。
 
@@ -400,21 +396,22 @@ OpenMP 的實作方式同樣是將沒有資料相依性的 smoothing、gradient 
 
 CUDA的實作方式會依據是否具有資料相依性有所不同，由於除了 edge linking 之外的步驟皆沒有資料相依性，
 因此這些步驟在 CUDA 進行平行化時，會將單一像素的運算交由一個 thread 進行；
-而edge linking需要同時考慮周圍像素的狀態，因此我們利用以下實作方式達到平行化。
-
+而edge linking需要同時考慮周圍像素的狀態，因此我們利用以下實作方式達到平行化。 \\
 在利用 CUDA 實作 edge linking 的平行化時，我們先將圖片切分成若干個子區域，
 數量等同於 grid 中 thread block 的個數，各 thread block 會分配到對應其 block ID 的圖片區域進行 edge linking。
-在進行 bfs 前，block 中的其中一個 thread 會先將負責區域內的 strong pixel 排入宣告在 shared memory 的 queue 中，
-並標記 weak pixel 所在的位置，方便後續進行 bfs 時尋找和 strong 相鄰的 weak pixel。接著 thread block 中的各 thread 會開始進行 bfs，
+在進行 BFS 前，block 中的其中一個 thread 會先將負責區域內的 strong pixel 排入宣告在 shared memory 的 queue 中，
+並標記 weak pixel 所在的位置，方便後續進行 BFS 時尋找和 strong 相鄰的 weak pixel。接著 thread block 中的各 thread 會開始進行 BFS，
 由於同一 thread block 中的 thread 會進行同步，因此不需要特別考慮 queue 的 race condition 問題，同個 thread block 中也可以達成 load balance。
 不過這樣的實作方式會導致各 thread block 負責的區域獨立，忽略橫跨多個子區域的潛在邊緣；
 因此我們參照 Luo 等人在\cite{4563088}中提到的兩個改良方式，一為讓子區域相互重疊 1 pixel 的寬度，
-讓各 thread block 在初始化 queue 時可以同時考慮相鄰 thread block 的 edge linking 結果；二為重複進行多次 bfs (multi-pass approach)，
+讓各 thread block 在初始化 queue 時可以同時考慮相鄰 thread block 的 edge linking 結果；二為重複進行多次 BFS (multi-pass approach)，
 目的是盡可能找出所有的潛在邊緣。
-Figure \ref{fig:cuda}為CUDA 的 edge linking 實作流程圖，可以發現若只進行一次 bfs，會有部分潛在邊緣沒有被找出來，
-因此需要進行多次 bfs，才能找出所有的潛在邊緣。
-由於能否完整還原潛在邊緣需取決於圖片本身特性和重複次數，
-因此在進行實驗時我們會確保偵測到的邊緣和實際邊緣的誤差不超過3\%。
+Figure \ref{fig:cuda}為CUDA 的 edge linking 實作流程圖，可以發現若只進行一次 BFS，會有部分潛在邊緣沒有被找出來，
+因此需要進行多次 BFS，才能找出所有的潛在邊緣。
+在本次實驗中，我們參照 Luo 等人在\cite{4563088}中的實驗結果，將 BFS 的重複次數設為 4 次，
+觀察是否能在低誤差的情況下，找出所有的潛在邊緣。
+% 由於能否完整還原潛在邊緣需取決於圖片本身特性和重複次數，
+% 因此在進行實驗時我們會確保偵測到的邊緣和實際邊緣的誤差不超過3\%。
 
 \begin{figure}[h]
   \centering
@@ -444,25 +441,25 @@ $2048 \times 1238$ 、 $1024 \times 619$ 共四張測試圖片進行實驗。在
 \subsubsection{Speedup and Efficiency with Different Number of Threads}
 
 在Figure \ref{fig:pthread_speedup} 和 Figure \ref{fig:pthread_efficiency}中，
-我們可以看到在使用計算大小圖片的情況下，使用不同數量的 thread 時的加速效果和效率。
-可以發現在相同圖片大小的情況下，使用較多的 thread 時，可以提升加速效果，
-但是效率會隨著 thread 數量的增加而有些微下降，這是因為在使用較多的 thread 時，
-會有較大的 fork-join 開銷，造成效率下降。
-比較不同圖片大小的情況下，可以發現在使用較大的圖片時，加速效果會比較好，
+我們可以看到在使用計算大小圖片的情況下，使用不同數量的 thread 時的speedup和 efficiency。
+可以發現在相同圖片大小的情況下，使用較多的 thread 時，可以提升speedup，
+但是 efficiency會隨著 thread 數量的增加而有些微下降，這是因為在使用較多的 thread 時，
+會有較大的 fork-join 開銷，造成 efficiency下降。
+比較不同圖片大小的情況下，可以發現在使用較大的圖片時，speedup會比較好，
 這是因為大尺寸圖片的總運算量較大，造成 fork-join 開銷對總執行時間的影響較小，
-因此可以有較好的加速效果和效率。
+因此可以有較好的speedup和 efficiency。
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{"./image/pthread_speedup.png"}
-  \caption{Pthread 使用不同數量 thread 時的加速效果}
+  \caption{Pthread 使用不同數量 thread 時的speedup}
   \label{fig:pthread_speedup}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{"./image/pthread_efficiency.png"}
-  \caption{Pthread 使用不同數量 thread 時的效率}
+  \caption{Pthread 使用不同數量 thread 時的 efficiency}
   \label{fig:pthread_efficiency}
 \end{figure}
 
@@ -471,8 +468,7 @@ $2048 \times 1238$ 、 $1024 \times 619$ 共四張測試圖片進行實驗。在
 在 \ref{load_balancing} 中，我們提出了一個 load balancing 的方法，
 來降低各 thread 工作量不均的問題。
 最終兩者執行時間如 Figure \ref{fig:pthread_load_balancing}所示，
-橫軸為不同圖片大小，縱軸為時間。
-可以看到load balancing版本不管圖片大小為何，執行速度都會比未使用load balancing的版本慢。
+可以看到不論使用多少 thread ，實作 load balancing 的版本都比較慢，
 
 \begin{figure}[htbp]
   \centering
@@ -483,33 +479,41 @@ $2048 \times 1238$ 、 $1024 \times 619$ 共四張測試圖片進行實驗。在
 
 根據我們的實驗，前5個 iteration 所佔據的時間，佔據約整體 edge linking 時間的 85\% 以上，
 由於起初我們會先將要計算的像素位置平分給所有 thread，因此各 thread 處理的像素數量是差不多的；
-而在 edge linking 的中期開始出現分配不均的現象 (如 Figure所示) ，各個thread要處理的pixel數量開始有差異，
+而在 edge linking 的中期開始出現分配不均的現象 (如 Figure \ref{fig:pthread_load}) ，
+各個thread要處理的pixel數量開始有差異，
 但剩餘要處理的像素不多，
 即使有分配不均的現象也不會對整體執行時間造成太大的影響；
 後半段的分配問題更為嚴重，但執行時間佔據比例已經很小，不足以影響整體執行時間。
 且我們發現在加入 load balancing 後，執行時間反而變慢，這是因為在加入 load balancing 後，
 各 thread 需要花費額外的時間來進行同步，拖累整體執行時間。
 
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{"./image/pthread_load.png"}
+  \caption{各 thread 處理的像素數量}
+  \label{fig:pthread_load}
+\end{figure}
+
 \subsection{OpenMP}
 
 \subsubsection{Speedup and Efficiency with Different Number of Threads}
 
 在Figure \ref{fig:openmp_speedup} 和 Figure \ref{fig:openmp_efficiency}中，
-我們可以看到在使用計算大小圖片的情況下，使用不同數量的 thread 時的加速效果和效率。
-和 Pthread 的結果相同，可以發現在相同圖片大小的情況下，效率會隨著 thread 數量的增加而有些微下降。
-且比較不同圖片大小的情況下，可以發現在使用較大的圖片時，加速效果會比較好。
+我們可以看到在使用計算大小圖片的情況下，使用不同數量的 thread 時的speedup和 efficiency。
+和 Pthread 的結果相同，可以發現在相同圖片大小的情況下， efficiency會隨著 thread 數量的增加而有些微下降。
+且比較不同圖片大小的情況下，可以發現在使用較大的圖片時，speedup會比較好。
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{"./image/openmp_speedup.png"}
-  \caption{OpenMP 使用不同數量 thread 時的加速效果}
+  \caption{OpenMP 使用不同數量 thread 時的speedup}
   \label{fig:openmp_speedup}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{"./image/openmp_efficiency.png"}
-  \caption{OpenMP 使用不同數量 thread 時的效率}
+  \caption{OpenMP 使用不同數量 thread 時的 efficiency}
   \label{fig:openmp_efficiency}
 \end{figure}
 
@@ -527,7 +531,7 @@ $2048 \times 1238$ 、 $1024 \times 619$ 共四張測試圖片進行實驗。在
 沒使用 lock 時，拜訪的節點數僅增加不到 1\%。從這些結果可以發現，
 因為 race condition 所造成的重複拜訪節點數沒有預期中的那麼多，
 且因拜訪節點後需要做的計算量極少，所以重複拜訪的成本低於使用 lock 的成本，
-所以使用 lock 效率反而較慢。
+所以使用 lock  efficiency反而較慢。
 
 \begin{figure}
   \centering
@@ -547,27 +551,24 @@ $2048 \times 1238$ 、 $1024 \times 619$ 共四張測試圖片進行實驗。在
 
 在 Figure \ref{fig:all_model} 和 Table \ref{tab:all_model} 中，
 我們可以看到在計算不同大小圖片的情況下，
-使用不同的平行化方法時的加速效果。
-
+使用不同的平行化方法時的speedup。\\
 首先，CED 中的大部分都是各個像素的獨立計算，
-因此在表中可以看到各模型上在大尺寸圖片上的加速效果都比較好，
-而在小尺寸圖片上的加速效果則不明顯。
-
-同樣為利用 CPU 進行平行化，Pthread 和 OpenMP 在各尺寸圖片上的加速效果相差不大，
+因此在表中可以看到各模型上在大尺寸圖片上的speedup都比較好，
+而在小尺寸圖片上的speedup則不明顯。\\
+同樣為利用 CPU 進行平行化，Pthread 和 OpenMP 在各尺寸圖片上的speedup相差不大，
 但由於 Pthread 可以更細緻地控制每個 thread 的行為和同步機制，
-因此整體上 Pthread 的加速效果會比 OpenMP 稍微好一些。
-
-CUDA 的實驗結果相較其他兩種平行化方法，在小張圖片的加速效果上較為不明顯，
+因此整體上 Pthread 的speedup會比 OpenMP 稍微好一些。\\
+CUDA 的實驗結果相較其他兩種平行化方法，在小張圖片的speedup上較為不明顯，
 我們推測原因為整體運算量太小，因此搬運圖像資料的時間成本依舊在總時間中佔有一定比例，
-這樣的因素導致 CUDA 的加速效果在小圖像上較為薄弱。隨著實驗圖像越來越大，
-搬運資料的時間成本所佔比例也越來越低，導致CUDA在加速效果上的優勢也越來越明顯。
+這樣的因素導致 CUDA 的speedup在小圖像上較為薄弱。隨著實驗圖像越來越大，
+搬運資料的時間成本所佔比例也越來越低，導致CUDA在 speedup 上的優勢也越來越明顯。
 由於是將單一像素的運算交由單一 thread 進行，因此可以視為整張圖像的運算是同時進行的，
 這和 Pthread 以及 OpenMP 此類利用 CPU 少量核心進行平行化的方法有決定性的差異。
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{"./image/all_model.png"}
-  \caption{各模型在不同尺寸照片下的加速效果}
+  \caption{各模型在不同尺寸照片下的speedup}
   \label{fig:all_model}
 \end{figure}
 
@@ -581,23 +582,54 @@ CUDA 的實驗結果相較其他兩種平行化方法，在小張圖片的加速
   OpenMP                 & 2.883       & 3.118       & 3.095       & 3.128      \\ \hline
   CUDA                   & 2.691       & 6.873       & 10.973      & 12.621     \\ \hline
   \end{tabular}
-  \caption{各模型在不同尺寸照片下的加速效果}
+  \caption{各模型在不同尺寸照片下的speedup}
   \label{tab:all_model}
 \end{table}
 
+\section{Related Work}
+
+Gonzalez等人在 \cite{gonzalez2018digital} 中提及了 Canny 演算法的概念，
+並介紹了每個步驟中的過程並給出了一些實做細節上的選擇，比如 Smoothing 中 filter 的選擇，
+或是 Gradient Computation 中計算 Gradient 的方式，但沒有提及如何使用平行化加速演算法的執行，
+所以我們接下來將介紹其他將此演算法利用平行化加速的研究。 \\
+Cheikh等人在\cite{6328953}中提出了兩種平行化的策略，
+分別為loop-level parallelism和domain decomposition；
+loop-level parallelism是將個步驟中可獨立運行的迴圈交由多個thread執行，
+但由於需要反覆進行fork-join，因此會有額外的開銷，
+且會因為計算全域資料而失去資料局部性(data locality)；
+domain decomposition是將資料本身進行分割再交由thread完成各分區的各項步驟，
+雖然domain decomposition沒有前述loop-level parallelism的缺陷，
+但需要選擇適合的資料分割方式來降低平行化時的相依性來達到最佳效能。
+Cheikh等人將兩種方式在多核CPU和GPU上進行實驗，
+發現loop-level parallelism在GPU上運行無serial的程式時可以達到很好的speedup，
+而domain decomposition適合在CPU上針對大型資料的運算進行平行化；
+最後他們結合了兩種平行化策略，發現結合後的speedup和擴展性相比於兩種平行化策略，
+在CPU和GPU的表現都更好，因此我們在針對CED的平行化策略上，
+也採取了結合loop-level parallelism和domain decomposition的方式，預期可以達到最好的成果。 \\
+Luo等人在在\cite{4563088}中嘗試以CUDA 框架對Canny Edge Detection進行平行化，
+並且提到過往在Canny Edge Detection中hysteresis labeling connected component part的平行化處理較少，
+因為此步驟平行化需要non-local memory，導致 speedup 與 efficiency 顯著降低。
+論文中使用GPU在處理pixel-wise operations有較高效率的特性來加速non-maximum suppression、
+hysteresis and connected components等部分，並引入Apron pixels的機制來讓所有像素可以在卷積中操作。
+實驗結果顯示，與CPU版本的實作相比，隨著圖片大小而有1.6X ～ 3.8X不等的speedup。
+另外GPU版本的hysteresis為了同步不同thread block間的運算使用了multi-pass approach，
+導致GPU運算速度降低，佔據75\%以上的運行時間。
+
 \section{Conclusion}
 
-經過我們利用三種平行化方法的實驗後，我們可以發現 Pthread與 OpenMP 加速效果相差不大，
+經過我們利用三種平行化方法的實驗後，我們可以發現 Pthread與 OpenMP speedup相差不大，
 但 Pthread 平均運行時間會略短於 Openmp。
 不過 Openmp 具有撰寫容易的特性，
 不須太大幅度更動原先程式的架構即可完成平行化；
 而Pthread則需要自行分割程式邏輯，獨立出要平行部分。
 在比較不同 thread 數量的實驗中，由於我們演算法的特性計算具有較高的獨立性，
-因此加速效果大致上隨著使用的 thread 數量等比下降，在 2\~4 個core都維持 0.8 以上的 efficiency。
+因此speedup大致上隨著使用的 thread 數量等比下降，在 2 ～ 4 個 thread 都維持在 0.7 以上的 efficiency。
 此外，lock、mutex、barrier 等同步機制所消耗的時間是相對高的，
-即使可以減少演算法中不必要的計算量，仍然會降低整體的執行時間。
+即使可以減少演算法中不必要的計算量，
+但若減少的計算量不足以彌補同步機制所消耗的時間，
+仍然會增加整體的執行時間。
 在CUDA上，由於運算單元更多，可以對各個像素平行化處理，
-因此加速效果會更明顯；但因需要額外的資料搬移，在小圖的加速效果上並不明顯。
+因此speedup會更明顯；但因需要額外的資料搬移，在小圖的speedup上並不明顯。
 
 
 % \subsection{Parallelization Strategies}
@@ -619,37 +651,6 @@ CUDA 的實驗結果相較其他兩種平行化方法，在小張圖片的加速
 % 使C++ 較為快速和高效；且C++ 提供控管記憶體的方式，給予一定靈活與設計空間；
 % 同時C++ STL提供多種 API 來支持平行化，包括std::future、std::atomic等。
 % 並且可使用其他框架來支持平行化，如OpenMP、CUDA、OpenCL。
-
-\section{Related Work}
-
-Gonzalez等人在 \cite{gonzalez2018digital} 中提及了 Canny 演算法的概念，
-並介紹了每個步驟中的過程並給出了一些實做細節上的選擇，比如 Smoothing 中 filter 的選擇，
-或是 Gradient Computation 中計算 Gradient 的方式，但沒有提及如何使用平行化加速演算法的執行，
-所以我們接下來將介紹其他將此演算法利用平行化加速的研究。
-
-Cheikh等人在\cite{6328953}中提出了兩種平行化的策略，
-分別為loop-level parallelism和domain decomposition；
-loop-level parallelism是將個步驟中可獨立運行的迴圈交由多個thread執行，
-但由於需要反覆進行fork-join，因此會有額外的開銷，
-且會因為計算全域資料而失去資料局部性(data locality)；
-domain decomposition是將資料本身進行分割再交由thread完成各分區的各項步驟，
-雖然domain decomposition沒有前述loop-level parallelism的缺陷，
-但需要選擇適合的資料分割方式來降低平行化時的相依性來達到最佳效能。
-Cheikh等人將兩種方式在多核CPU和GPU上進行實驗，
-發現loop-level parallelism在GPU上運行無serial的程式時可以達到很好的加速效果，
-而domain decomposition適合在CPU上針對大型資料的運算進行平行化；
-最後他們結合了兩種平行化策略，發現結合後的加速效果和擴展性相比於兩種平行化策略，
-在CPU和GPU的表現都更好，因此我們在針對CED的平行化策略上，
-也採取了結合loop-level parallelism和domain decomposition的方式，預期可以達到最好的成果。
-
-Luo等人在在\cite{4563088}中嘗試以CUDA 框架對Canny Edge Detection進行平行化，
-並且提到過往在Canny Edge Detection中hysteresis labeling connected component part的平行化處理較少，
-因為此步驟平行化需要non-local memory，導致速度與效率顯著降低。
-論文中使用GPU在處理pixel-wise operations有較高效率的特性來加速non-maximum suppression、
-hysteresis and connected components等部分，並引入Apron pixels的機制來讓所有像素可以在卷積中操作。
-實驗結果顯示，與CPU版本的實作相比，隨著圖片大小而有1.6X\~3.8X不等的加速效果。
-另外GPU版本的hysteresis為了同步不同thread block間的運算使用了multi-pass approach，
-導致GPU運算速度降低，佔據75\%以上的運行時間。
 
 % \section{Statement of Expected Results}
 
