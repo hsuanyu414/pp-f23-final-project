@@ -210,8 +210,6 @@ void edge_linking(
     int32_t temp;
     // queue of each thread
     queue<int32_t> q_omp[thread_used];
-    // lock for visited
-    // omp_lock_t lock[end_width * end_height];
     for (int i = 0; i < end_width * end_height; i++)
         omp_init_lock(&lock[i]);
 
@@ -282,7 +280,7 @@ void edge_linking(
     int total_visit_count = 0;
     for(int i = 0 ; i < thread_used ; i++)
         total_visit_count += visit_count[i];
-    // printf("total visit count: %d\n", total_visit_count);
+    printf("total visit count: %d\n", total_visit_count);
 }
 
 int main(int argc, char *argv[]){
